@@ -22,6 +22,7 @@ $styleVersion = is_file($stylePath) ? (string) filemtime($stylePath) : '1';
             <a href="<?= e(app_base_path()) ?>/snapshots.php">Snapshot</a>
             <a href="<?= e(app_base_path()) ?>/compare.php">Confronto</a>
             <a href="<?= e(app_base_path()) ?>/assets.php">Strumenti</a>
+            <a href="<?= e(app_base_path()) ?>/ai_report.php">Report AI</a>
         </nav>
     </div>
 </header>

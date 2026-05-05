@@ -581,6 +581,39 @@ button:hover,
     word-break: break-word;
 }
 
+.ai-meta-big {
+    margin: 0;
+    color: var(--title);
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.ai-report-panel {
+    line-height: 1.62;
+}
+
+.ai-report-panel h3 {
+    margin: 1.15rem 0 0.45rem;
+    font-size: 1.2rem;
+}
+
+.ai-report-panel h3:first-child {
+    margin-top: 0;
+}
+
+.ai-report-panel p {
+    margin: 0.45rem 0;
+}
+
+.ai-report-panel ul {
+    margin: 0.45rem 0 0.8rem;
+    padding-left: 1.2rem;
+}
+
+.ai-report-panel li {
+    margin: 0.25rem 0;
+}
+
 .andamento-table-wrap {
     overflow: auto;
     border-radius: 8px;

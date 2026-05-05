@@ -14,4 +14,9 @@ return [
         'enable_fx' => true,
         'enable_news' => false,
     ],
+    'gemini' => [
+        'api_key' => 'YOUR_GEMINI_API_KEY',
+        'model' => 'gemini-2.5-flash',
+        'timeout_seconds' => 90,
+    ],
 ];

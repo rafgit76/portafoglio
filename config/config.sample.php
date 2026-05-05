@@ -20,4 +20,9 @@ return [
         'enable_news' => false,
         'external_fetch_timeout_seconds' => 3,
     ],
+    'gemini' => [
+        'api_key' => getenv('PORTFOLIO_GEMINI_API_KEY') ?: '',
+        'model' => getenv('PORTFOLIO_GEMINI_MODEL') ?: 'gemini-2.5-flash',
+        'timeout_seconds' => (int) (getenv('PORTFOLIO_GEMINI_TIMEOUT_SECONDS') ?: 90),
+    ],
 ];

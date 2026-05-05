@@ -4,8 +4,8 @@
 
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
-Versione stabile corrente:
-- `1.0.0`
+Versione corrente:
+- `1.1.0`
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto

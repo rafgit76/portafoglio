@@ -28,6 +28,11 @@ $config = [
         'enable_news' => false,
         'external_fetch_timeout_seconds' => 3,
     ],
+    'gemini' => [
+        'api_key' => $env('PORTFOLIO_GEMINI_API_KEY', ''),
+        'model' => $env('PORTFOLIO_GEMINI_MODEL', 'gemini-2.5-flash'),
+        'timeout_seconds' => (int) $env('PORTFOLIO_GEMINI_TIMEOUT_SECONDS', 90),
+    ],
 ];
 
 return array_replace_recursive($config, is_array($localConfig) ? $localConfig : []);
