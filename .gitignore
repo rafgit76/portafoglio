@@ -1,0 +1,7 @@
+/config/config.local.php
+/storage/*.json
+/storage/uploads/*
+!/storage/uploads/.gitkeep
+/vendor/
+/.phpunit.result.cache
+

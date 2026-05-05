@@ -1,0 +1,23 @@
+Options -Indexes
+
+php_value upload_max_filesize 10M
+php_value post_max_size 12M
+php_value max_execution_time 120
+php_flag display_errors Off
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^(?:config|lib|partials|sql|storage|vendor)(?:/|$) - [F,L,NC]
+</IfModule>
+
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+<FilesMatch "^(README\.md|THREAD_MASTER\.md)$">
+  Require all denied
+</FilesMatch>
+
+<FilesMatch "^(composer\.(json|lock))$">
+  Require all denied
+</FilesMatch>
