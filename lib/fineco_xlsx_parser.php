@@ -48,6 +48,16 @@ final class FinecoXlsxParser
         'valore_di_mercato_euro',
     ];
 
+    private const NUMERIC_FIELDS = [
+        'quantita' => true,
+        'p_zo_medio_di_carico' => true,
+        'valore_di_carico' => true,
+        'p_zo_di_mercato' => true,
+        'valore_di_mercato_euro' => true,
+        'var_pct' => true,
+        'var_euro' => true,
+    ];
+
     public function parse(string $xlsxPath): array
     {
         if (class_exists(IOFactory::class)) {
@@ -74,7 +84,10 @@ final class FinecoXlsxParser
         for ($row = $detection['row'] + 1; $row <= $maxRow; $row++) {
             $record = [];
             foreach ($detection['headers'] as $field => $column) {
-                $record[$field] = trim((string) $sheet->getCell([$column, $row])->getFormattedValue());
+                $cell = $sheet->getCell([$column, $row]);
+                $record[$field] = isset(self::NUMERIC_FIELDS[$field])
+                    ? $cell->getCalculatedValue()
+                    : trim((string) $cell->getFormattedValue());
             }
 
             $position = $this->positionFromRecord($record);
