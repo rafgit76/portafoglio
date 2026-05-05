@@ -54,7 +54,10 @@ include __DIR__ . '/partials/header.php';
         <form method="post">
             <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="regenerate">
-            <button type="submit">Rigenera report</button>
+            <div class="ai-report-actions">
+                <button type="button" class="btn-secondary" onclick="window.print()">Versione stampabile</button>
+                <button type="submit">Rigenera report</button>
+            </div>
         </form>
     </div>
 </section>

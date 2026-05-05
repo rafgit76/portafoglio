@@ -614,6 +614,73 @@ button:hover,
     margin: 0.25rem 0;
 }
 
+.ai-report-actions {
+    display: flex;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+@media print {
+    body {
+        background: #ffffff;
+        color: #111827;
+    }
+
+    .topbar,
+    .runtime-footer,
+    .flash,
+    .ai-report-actions {
+        display: none !important;
+    }
+
+    .container {
+        width: 100%;
+        max-width: none;
+    }
+
+    main.container {
+        padding: 0;
+    }
+
+    .panel,
+    .card {
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+        margin-bottom: 1rem;
+        overflow: visible;
+    }
+
+    .cards {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.8rem;
+        border-bottom: 1px solid #d1d5db;
+        padding-bottom: 0.8rem;
+    }
+
+    .panel-head {
+        align-items: flex-start;
+    }
+
+    .ai-report-panel {
+        font-size: 11pt;
+        line-height: 1.45;
+    }
+
+    .ai-report-panel h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+        margin-top: 1rem;
+    }
+
+    .ai-report-panel p,
+    .ai-report-panel li {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+}
+
 .andamento-table-wrap {
     overflow: auto;
     border-radius: 8px;
