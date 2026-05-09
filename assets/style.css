@@ -795,6 +795,68 @@ button:hover,
     margin-bottom: 0.75rem;
 }
 
+.andamento-export-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    margin-top: 0.9rem;
+}
+
+.export-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 40px;
+    padding: 0.55rem 0.82rem;
+    box-shadow: 0 6px 16px rgba(20, 45, 60, 0.1);
+}
+
+.export-btn-excel {
+    background: #eaf7f0;
+    color: #126a3a;
+    border: 1px solid #a9d8bd;
+}
+
+.export-btn-excel:hover {
+    background: #dff2e8;
+    color: #0d5f31;
+    filter: none;
+}
+
+.export-btn-pdf {
+    background: #fff0f1;
+    color: #a32132;
+    border: 1px solid #efb4bd;
+}
+
+.export-btn-pdf:hover {
+    background: #ffe5e8;
+    color: #8f1d2c;
+    filter: none;
+}
+
+.export-file-icon {
+    display: inline-grid;
+    place-items: center;
+    min-width: 32px;
+    height: 26px;
+    border-radius: 6px;
+    color: #ffffff;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.export-btn-excel .export-file-icon {
+    background: #168349;
+}
+
+.export-btn-pdf .export-file-icon {
+    background: #c43a4b;
+}
+
 .sortable {
     cursor: pointer;
     user-select: none;
@@ -830,5 +892,72 @@ button:hover,
     .runtime-summary-bar strong {
         width: 100%;
         font-size: 1.3rem;
+    }
+}
+
+@media print {
+    @page {
+        size: A4 landscape;
+        margin: 8mm;
+    }
+
+    .andamento-toolbar,
+    .andamento-export-actions {
+        display: none !important;
+    }
+
+    main.container {
+        width: 100% !important;
+    }
+
+    .andamento-table-wrap {
+        overflow: visible;
+        border-radius: 0;
+    }
+
+    .andamento-table {
+        min-width: 0;
+        width: 100%;
+        border: 1px solid #cbd5df;
+        font-size: 7pt;
+    }
+
+    .andamento-table th,
+    .andamento-table td {
+        padding: 2.5px 3px;
+        font-size: 7pt;
+        white-space: nowrap;
+    }
+
+    .andamento-heading-title {
+        max-width: 58px;
+        font-size: 6pt;
+    }
+
+    .andamento-heading-metric {
+        font-size: 5.8pt;
+    }
+
+    .mono-cell,
+    .mono-cell-pl,
+    .mono-cell-qty {
+        min-width: 0;
+        font-size: 6.6pt;
+    }
+
+    .date-cell,
+    .andamento-date-head {
+        min-width: 0;
+    }
+
+    .sticky-col {
+        position: static;
+        box-shadow: none;
+    }
+
+    .cell-max-hit,
+    .cell-min-hit {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
     }
 }

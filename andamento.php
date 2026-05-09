@@ -121,6 +121,123 @@ foreach ($columns as $column) {
     $minPnlByAsset[$assetId] = $pnlValues ? min($pnlValues) : null;
 }
 
+if (($_GET['export'] ?? '') === 'xlsx') {
+    if (!class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class)) {
+        http_response_code(500);
+        exit('PhpSpreadsheet non disponibile. Esegui composer install e carica vendor/.');
+    }
+
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $spreadsheet->getProperties()
+        ->setCreator('Portfolio Investimenti')
+        ->setTitle('Andamento storico per titolo')
+        ->setSubject('Storico snapshot portafoglio');
+
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setTitle('Andamento');
+
+    $generatedAt = (new DateTimeImmutable('now'))->format('Y-m-d H:i');
+    $sheet->setCellValue('A1', 'Andamento storico per titolo');
+    $sheet->setCellValue('A2', 'Generato il ' . $generatedAt . ' - Snapshot: ' . count($orderedRows) . ' - Titoli: ' . count($columns));
+
+    $headerRow = 4;
+    $metricRow = 5;
+    $sheet->setCellValue('A' . $headerRow, 'DATA');
+    $sheet->mergeCells('A' . $headerRow . ':A' . $metricRow);
+
+    $columnIndex = 2;
+    foreach ($columns as $column) {
+        $startColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex);
+        $endColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex + 2);
+        $sheet->mergeCells($startColumn . $headerRow . ':' . $endColumn . $headerRow);
+        $sheet->setCellValue($startColumn . $headerRow, $column['label']);
+        $sheet->setCellValue($startColumn . $metricRow, 'QTA');
+        $sheet->setCellValue(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex + 1) . $metricRow, 'VAL');
+        $sheet->setCellValue(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex + 2) . $metricRow, 'P/L');
+        $columnIndex += 3;
+    }
+
+    $dataRow = 6;
+    foreach (array_reverse($orderedRows) as $row) {
+        $sheet->setCellValue('A' . $dataRow, $row['snapshot_date']);
+        $columnIndex = 2;
+
+        foreach ($columns as $column) {
+            $value = $row['values'][(int) $column['id']] ?? null;
+            if ($value !== null) {
+                $sheet->setCellValueExplicit(
+                    \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex) . $dataRow,
+                    (float) $value['quantity'],
+                    \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC
+                );
+                $sheet->setCellValueExplicit(
+                    \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex + 1) . $dataRow,
+                    (float) $value['market_value'],
+                    \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC
+                );
+                $sheet->setCellValueExplicit(
+                    \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex + 2) . $dataRow,
+                    (float) $value['unrealized_pnl'],
+                    \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC
+                );
+            }
+            $columnIndex += 3;
+        }
+
+        $dataRow++;
+    }
+
+    $lastColumnIndex = max(1, 1 + count($columns) * 3);
+    $lastColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastColumnIndex);
+    $lastDataRow = max($metricRow, $dataRow - 1);
+
+    $sheet->mergeCells('A1:' . $lastColumn . '1');
+    $sheet->mergeCells('A2:' . $lastColumn . '2');
+    $sheet->freezePane('B6');
+    $sheet->setAutoFilter('A' . $metricRow . ':' . $lastColumn . $lastDataRow);
+
+    $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
+    $sheet->getStyle('A2')->getFont()->setSize(10)->getColor()->setARGB('FF647681');
+    $sheet->getStyle('A' . $headerRow . ':' . $lastColumn . $metricRow)->getFont()->setBold(true);
+    $sheet->getStyle('A' . $headerRow . ':' . $lastColumn . $metricRow)
+        ->getFill()
+        ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+        ->getStartColor()
+        ->setARGB('FFE7F0F4');
+    $sheet->getStyle('A' . $headerRow . ':' . $lastColumn . $lastDataRow)
+        ->getBorders()
+        ->getAllBorders()
+        ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN)
+        ->getColor()
+        ->setARGB('FFD8E2E8');
+
+    for ($i = 2; $i <= $lastColumnIndex; $i += 3) {
+        $qtyColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i);
+        $valColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 1);
+        $pnlColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 2);
+        $sheet->getStyle($qtyColumn . '6:' . $qtyColumn . $lastDataRow)->getNumberFormat()->setFormatCode('#,##0.######');
+        $sheet->getStyle($valColumn . '6:' . $valColumn . $lastDataRow)->getNumberFormat()->setFormatCode('#,##0.00');
+        $sheet->getStyle($pnlColumn . '6:' . $pnlColumn . $lastDataRow)->getNumberFormat()->setFormatCode('#,##0.00');
+    }
+
+    $sheet->getColumnDimension('A')->setWidth(12);
+    for ($i = 2; $i <= $lastColumnIndex; $i++) {
+        $sheet->getColumnDimension(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i))->setWidth(12);
+    }
+
+    $filename = 'andamento_portafoglio_' . (new DateTimeImmutable('now'))->format('Ymd_His') . '.xlsx';
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: max-age=0');
+
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    $writer->save('php://output');
+    exit;
+}
+
 include __DIR__ . '/partials/header.php';
 ?>
 <style>
@@ -260,6 +377,17 @@ main.container {
                 </tbody>
             </table>
         </div>
+
+        <div class="andamento-export-actions">
+            <a class="btn export-btn export-btn-excel" href="<?= e(app_base_path()) ?>/andamento.php?export=xlsx">
+                <span class="export-file-icon" aria-hidden="true">XLS</span>
+                <span>Esporta Excel</span>
+            </a>
+            <button type="button" class="btn export-btn export-btn-pdf" id="andamentoPrintButton">
+                <span class="export-file-icon" aria-hidden="true">PDF</span>
+                <span>Stampa PDF</span>
+            </button>
+        </div>
     <?php endif; ?>
 </section>
 
@@ -323,6 +451,10 @@ main.container {
     });
 
     sortTable(0, 'desc');
+
+    document.getElementById('andamentoPrintButton')?.addEventListener('click', () => {
+        window.print();
+    });
 })();
 </script>
 <?php endif; ?>
