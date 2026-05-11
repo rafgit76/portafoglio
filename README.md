@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare l'export Fineco (`.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `1.1.0`
+Versione corrente: `1.2.0`
 
 ## Deploy (FTP)
 
@@ -27,6 +27,7 @@ Carica tutto in:
 - parser Fineco con detection dinamica intestazioni e supporto PhpSpreadsheet
 - cartella `storage/` non esposta pubblicamente
 - footer runtime pubblico ridotto al minimo per default
+- versione app e changelog visibili dal footer
 - configurazione applicativa esplicita per target PHP 8.4
 
 ## Opzioni esterne
@@ -45,9 +46,16 @@ In `config/config.local.php` puoi regolare:
 - `snapshot.php?id=...`: dettaglio snapshot
 - `assets.php`: anagrafica strumenti
 - `ai_report.php`: report AI sullo storico snapshot
+- `changelog.php`: storico versioni applicative
 
 ## Report AI
 
 La pagina `Report AI` usa Gemini lato server per generare un report sullo storico degli snapshot.
 Configura la chiave solo in `config/config.local.php` o tramite `PORTFOLIO_GEMINI_API_KEY`.
 Il report viene salvato in cache in `storage/ai_report_cache.json` e rigenerato quando cambiano gli snapshot o quando premi “Rigenera report”.
+
+## Versioning
+
+La versione corrente e' definita in `config/config.php` tramite `app_version` ed e' riportata anche nel file `VERSION`.
+Il changelog applicativo e' in `config/changelog.php`.
+Ogni modifica significativa deve aggiornare sia il numero di versione sia il changelog.

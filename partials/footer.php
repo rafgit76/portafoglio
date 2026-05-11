@@ -1,5 +1,6 @@
 <?php
 $appName = (string) app_setting('public_app_name', 'Portfolio Investimenti');
+$appVersion = (string) app_setting('app_version', '1.0.0');
 $targetPhpVersion = (string) app_setting('target_php_version', '8.4');
 $showRuntimeSummary = (bool) app_setting('show_runtime_summary', false);
 $showRuntimeDetails = (bool) app_setting('show_runtime_details', false);
@@ -39,6 +40,8 @@ if ($showRuntimeSummary || $showRuntimeDetails) {
     <footer class="runtime-footer">
         <div class="runtime-summary-bar">
             <strong><?= e($appName) ?></strong>
+            <span class="runtime-chip">v<?= e($appVersion) ?></span>
+            <a class="runtime-chip runtime-link" href="<?= e(app_base_path()) ?>/changelog.php">Changelog</a>
             <span class="runtime-chip">Target PHP <?= e($targetPhpVersion) ?></span>
             <span class="runtime-chip">DB <?= e($dbName !== '' ? $dbName : 'N/D') ?></span>
             <?php if ($showRuntimeSummary): ?>
