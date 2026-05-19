@@ -11,13 +11,13 @@ return [
     ],
     'app' => [
         'base_path' => '/apps/portafoglio',
-        'app_version' => '1.2.0',
+        'app_version' => '1.2.2',
         'enable_fx' => true,
         'enable_news' => false,
     ],
     'gemini' => [
         'api_key' => 'YOUR_GEMINI_API_KEY',
-        'model' => 'gemini-2.5-flash',
+        'model' => 'gemini-3.1-flash-lite',
         'timeout_seconds' => 90,
     ],
 ];

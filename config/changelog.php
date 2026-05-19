@@ -2,6 +2,27 @@
 
 return [
     [
+        'version' => '1.2.2',
+        'date' => '2026-05-19',
+        'title' => 'Report AI piu approfondito',
+        'changes' => [
+            'Rafforzato il prompt del Report AI per ottenere un report narrativo piu completo.',
+            'Aggiunta richiesta esplicita di analisi per asset rilevanti, controvalori e variazioni di peso percentuale.',
+            'Aumentato il limite di output del modello per ridurre risposte troppo sintetiche.',
+            'Aggiunta versione del prompt nella cache per rigenerare automaticamente il report dopo il deploy.',
+        ],
+    ],
+    [
+        'version' => '1.2.1',
+        'date' => '2026-05-19',
+        'title' => 'Aggiornamento modello Gemini',
+        'changes' => [
+            'Aggiornato il modello AI predefinito a gemini-3.1-flash-lite.',
+            'Allineata la chiamata REST Gemini tramite header x-goog-api-key per evitare la chiave in URL.',
+            'Aggiunta invalidazione automatica della cache Report AI quando cambia modello.',
+        ],
+    ],
+    [
         'version' => '1.2.0',
         'date' => '2026-05-11',
         'title' => 'Versioning, changelog ed export andamento',

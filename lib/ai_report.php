@@ -30,6 +30,11 @@ function ai_report_save_cache(array $payload): void
     file_put_contents($path, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
 }
 
+function ai_report_prompt_version(): string
+{
+    return '2026-05-19-detailed-report-v1';
+}
+
 function ai_report_build_payload(PDO $pdo): array
 {
     $snapshots = $pdo->query(
@@ -255,7 +260,7 @@ function ai_report_generate_with_gemini(array $historyPayload): array
 {
     $geminiConfig = app_config()['gemini'] ?? [];
     $apiKey = (string) ($geminiConfig['api_key'] ?? '');
-    $model = (string) ($geminiConfig['model'] ?? 'gemini-2.5-flash');
+    $model = (string) ($geminiConfig['model'] ?? 'gemini-3.1-flash-lite');
     $timeoutSeconds = (int) ($geminiConfig['timeout_seconds'] ?? 90);
 
     if ($apiKey === '' || str_contains($apiKey, 'INSERISCI_CHIAVE')) {
@@ -278,6 +283,7 @@ function ai_report_generate_with_gemini(array $historyPayload): array
     return [
         'provider' => 'gemini',
         'model' => $model,
+        'prompt_version' => ai_report_prompt_version(),
         'generated_at' => date('c'),
         'http_code' => $response['http_code'],
         'prompt_tokens' => (int) ($response['prompt_tokens'] ?? 0),
@@ -299,12 +305,18 @@ Vincoli obbligatori:
 - separa osservazioni fattuali da interpretazioni;
 - evidenzia massimi/minimi storici, evoluzione recente, concentrazione, variazioni per posizione e possibili anomalie nei dati;
 - rispondi solo in italiano;
-- resta sintetico ma utile (max 750 parole).
+- non limitarti a una sintesi: produci un report narrativo approfondito, leggibile e completo;
+- fornisci almeno 4-5 paragrafi discorsivi approfonditi, evitando frasi telegrafiche;
+- quando citi un asset rilevante, commenta nome/ticker se disponibile, variazione del controvalore, variazione del peso percentuale e contributo al movimento complessivo;
+- dedica spazio alle posizioni principali e alle posizioni che hanno cambiato peso in modo significativo;
+- se i dati disponibili non bastano per spiegare una causa, dichiaralo esplicitamente invece di inventare;
+- lunghezza indicativa: 1000-1400 parole, con dettagli concreti numerici dove utili.
 
 Formato risposta obbligatorio in Markdown:
 ### Sintesi
 ### Evoluzione dello storico
 ### Posizioni che guidano le variazioni
+### Analisi per asset rilevanti
 ### Concentrazione e composizione
 ### Punti di attenzione
 ### Prossimi controlli utili
@@ -318,7 +330,7 @@ PROMPT;
 
 function ai_report_gemini_request(string $apiKey, string $model, string $prompt, int $timeoutSeconds): array
 {
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent?key=' . rawurlencode($apiKey);
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent';
     $body = [
         'contents' => [
             [
@@ -331,7 +343,7 @@ function ai_report_gemini_request(string $apiKey, string $model, string $prompt,
         'generationConfig' => [
             'temperature' => 0.2,
             'topP' => 0.9,
-            'maxOutputTokens' => 1800,
+            'maxOutputTokens' => 3200,
             'responseMimeType' => 'text/plain',
             'thinkingConfig' => [
                 'thinkingBudget' => 0,
@@ -345,13 +357,13 @@ function ai_report_gemini_request(string $apiKey, string $model, string $prompt,
     }
 
     if (function_exists('curl_init')) {
-        return ai_report_gemini_request_curl($url, $jsonBody, $timeoutSeconds);
+        return ai_report_gemini_request_curl($url, $apiKey, $jsonBody, $timeoutSeconds);
     }
 
-    return ai_report_gemini_request_stream($url, $jsonBody, $timeoutSeconds);
+    return ai_report_gemini_request_stream($url, $apiKey, $jsonBody, $timeoutSeconds);
 }
 
-function ai_report_gemini_request_curl(string $url, string $jsonBody, int $timeoutSeconds): array
+function ai_report_gemini_request_curl(string $url, string $apiKey, string $jsonBody, int $timeoutSeconds): array
 {
     $ch = curl_init($url);
     if ($ch === false) {
@@ -361,7 +373,10 @@ function ai_report_gemini_request_curl(string $url, string $jsonBody, int $timeo
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'x-goog-api-key: ' . $apiKey,
+        ],
         CURLOPT_POSTFIELDS => $jsonBody,
         CURLOPT_TIMEOUT => max(10, $timeoutSeconds),
         CURLOPT_CONNECTTIMEOUT => 15,
@@ -379,12 +394,12 @@ function ai_report_gemini_request_curl(string $url, string $jsonBody, int $timeo
     return ai_report_decode_gemini_response((string) $raw, $httpCode);
 }
 
-function ai_report_gemini_request_stream(string $url, string $jsonBody, int $timeoutSeconds): array
+function ai_report_gemini_request_stream(string $url, string $apiKey, string $jsonBody, int $timeoutSeconds): array
 {
     $context = stream_context_create([
         'http' => [
             'method' => 'POST',
-            'header' => "Content-Type: application/json\r\n",
+            'header' => "Content-Type: application/json\r\n" . 'x-goog-api-key: ' . $apiKey . "\r\n",
             'content' => $jsonBody,
             'timeout' => max(10, $timeoutSeconds),
             'ignore_errors' => true,

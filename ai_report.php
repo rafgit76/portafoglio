@@ -8,10 +8,15 @@ $error = null;
 $notice = null;
 $built = null;
 $cache = ai_report_load_cache();
+$configuredModel = (string) ((app_config()['gemini']['model'] ?? '') ?: 'gemini-3.1-flash-lite');
+$configuredPromptVersion = ai_report_prompt_version();
 
 try {
     $built = ai_report_build_payload($pdo);
-    $isStale = !$cache || (($cache['data_hash'] ?? '') !== $built['hash']);
+    $isStale = !$cache
+        || (($cache['data_hash'] ?? '') !== $built['hash'])
+        || ((string) ($cache['model'] ?? '') !== $configuredModel)
+        || ((string) ($cache['prompt_version'] ?? '') !== $configuredPromptVersion);
     $forceRegenerate = $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regenerate';
 
     if ($forceRegenerate) {
@@ -29,6 +34,7 @@ try {
             'generated_at' => $generated['generated_at'],
             'provider' => $generated['provider'],
             'model' => $generated['model'],
+            'prompt_version' => $generated['prompt_version'],
             'usage' => [
                 'prompt_tokens' => $generated['prompt_tokens'],
                 'output_tokens' => $generated['output_tokens'],

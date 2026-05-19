@@ -12,7 +12,7 @@ return [
         'base_path' => '/apps/portafoglio',
         'default_currency' => 'EUR',
         'target_php_version' => '8.4',
-        'app_version' => '1.2.0',
+        'app_version' => '1.2.2',
         'public_app_name' => 'Portfolio Investimenti',
         'upload_max_size_mb' => 10,
         'show_runtime_summary' => false,
@@ -23,7 +23,7 @@ return [
     ],
     'gemini' => [
         'api_key' => getenv('PORTFOLIO_GEMINI_API_KEY') ?: '',
-        'model' => getenv('PORTFOLIO_GEMINI_MODEL') ?: 'gemini-2.5-flash',
+        'model' => getenv('PORTFOLIO_GEMINI_MODEL') ?: 'gemini-3.1-flash-lite',
         'timeout_seconds' => (int) (getenv('PORTFOLIO_GEMINI_TIMEOUT_SECONDS') ?: 90),
     ],
 ];
