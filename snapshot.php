@@ -68,7 +68,7 @@ include __DIR__ . '/partials/header.php';
                 <td><?= e($p['name']) ?></td>
                 <td><?= e($p['asset_type']) ?></td>
                 <td><?= e($p['isin'] ?? '-') ?></td>
-                <td><?= number_format((float) $p['quantity'], 6, ',', '.') ?></td>
+                <td><?= number_format((float) $p['quantity'], 2, ',', '.') ?></td>
                 <td><?= number_format((float) $p['avg_load_price'], 4, ',', '.') ?></td>
                 <td><?= number_format((float) $p['current_price'], 4, ',', '.') ?></td>
                 <td>EUR <?= number_format((float) $p['cost_basis'], 2, ',', '.') ?></td>

@@ -2,6 +2,15 @@
 
 return [
     [
+        'version' => '1.2.3',
+        'date' => '2026-06-03',
+        'title' => 'Quantita piu compatte nello snapshot',
+        'changes' => [
+            'Ridotta la visualizzazione della colonna quantita a due decimali nel dettaglio snapshot.',
+            'Mantenuti invariati i valori salvati a database e usati nei calcoli.',
+        ],
+    ],
+    [
         'version' => '1.2.2',
         'date' => '2026-05-19',
         'title' => 'Report AI piu approfondito',
