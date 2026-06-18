@@ -2,6 +2,16 @@
 
 return [
     [
+        'version' => '1.2.4',
+        'date' => '2026-06-18',
+        'title' => 'Andamento piu navigabile',
+        'changes' => [
+            'Aggiunta paginazione alla tabella Andamento storico per titolo.',
+            'Aggiunto selettore per scegliere quante righe di storico visualizzare.',
+            'Aggiunti tooltip sui valori P/L con massimo storico e distanza dal massimo.',
+        ],
+    ],
+    [
         'version' => '1.2.3',
         'date' => '2026-06-03',
         'title' => 'Quantita piu compatte nello snapshot',

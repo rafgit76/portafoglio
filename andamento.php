@@ -95,8 +95,10 @@ $formatQuantity = static function (float $value): string {
     $formatted = rtrim($formatted, ',');
     return $formatted === '' ? '0' : $formatted;
 };
+$formatMoney = static fn(float $value): string => 'EUR ' . number_format($value, 2, ',', '.');
 $maxMarketByAsset = [];
 $maxPnlByAsset = [];
+$maxPnlDateByAsset = [];
 $minMarketByAsset = [];
 $minPnlByAsset = [];
 
@@ -119,6 +121,17 @@ foreach ($columns as $column) {
     $maxPnlByAsset[$assetId] = $pnlValues ? max($pnlValues) : null;
     $minMarketByAsset[$assetId] = $marketValues ? min($marketValues) : null;
     $minPnlByAsset[$assetId] = $pnlValues ? min($pnlValues) : null;
+
+    $maxPnlDateByAsset[$assetId] = null;
+    if ($maxPnlByAsset[$assetId] !== null) {
+        foreach ($orderedRows as $row) {
+            $value = $row['values'][$assetId] ?? null;
+            if ($value !== null && abs((float) $value['unrealized_pnl'] - (float) $maxPnlByAsset[$assetId]) < 0.00001) {
+                $maxPnlDateByAsset[$assetId] = (string) $row['snapshot_date'];
+                break;
+            }
+        }
+    }
 }
 
 if (($_GET['export'] ?? '') === 'xlsx') {
@@ -263,6 +276,18 @@ main.container {
     <?php else: ?>
         <div class="andamento-toolbar">
             <span class="tiny-note">Ordina cliccando l'intestazione della colonna. Le evidenziazioni MIN/MAX restano solo su VAL e P/L.</span>
+            <div class="andamento-controls">
+                <label class="andamento-page-size">
+                    <span>Righe</span>
+                    <select id="andamentoPageSize">
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="all">Tutto</option>
+                    </select>
+                </label>
+                <div class="andamento-pagination" id="andamentoPager"></div>
+            </div>
         </div>
 
         <div class="andamento-table-wrap">
@@ -338,6 +363,25 @@ main.container {
                                 $minCellInlineStyle = 'background:#ffe7ea !important; border:2px solid #d35568 !important; color:#972036 !important;';
                                 $marketCellStyle = $isMaxMarket ? $maxCellInlineStyle : (($isMinMarket && !$isMaxMarket) ? $minCellInlineStyle : '');
                                 $pnlCellStyle = $isMaxPnl ? $maxCellInlineStyle : (($isMinPnl && !$isMaxPnl) ? $minCellInlineStyle : '');
+                                $pnlTooltip = '';
+                                if ($value !== null && $maxPnlByAsset[$assetId] !== null) {
+                                    $currentPnl = (float) $value['unrealized_pnl'];
+                                    $maxPnl = (float) $maxPnlByAsset[$assetId];
+                                    $distanceFromMax = max(0.0, $maxPnl - $currentPnl);
+                                    $distancePct = abs($maxPnl) > 0.00001 ? ($distanceFromMax / abs($maxPnl)) * 100 : null;
+                                    $maxPnlDate = $maxPnlDateByAsset[$assetId] ?: 'data non disponibile';
+
+                                    if ($distanceFromMax < 0.00001) {
+                                        $pnlTooltip = 'P/L massimo storico raggiunto: ' . $formatMoney($maxPnl) . ' il ' . $maxPnlDate . '.';
+                                    } else {
+                                        $pnlTooltip = 'Massimo P/L: ' . $formatMoney($maxPnl) . ' il ' . $maxPnlDate . '. Distanza dal massimo: ' . $formatMoney($distanceFromMax);
+                                        if ($distancePct !== null) {
+                                            $pnlTooltip .= ' (' . number_format($distancePct, 2, ',', '.') . '%).';
+                                        } else {
+                                            $pnlTooltip .= '.';
+                                        }
+                                    }
+                                }
                                 ?>
                                 <td
                                     class="mono-cell mono-cell-qty"
@@ -364,6 +408,7 @@ main.container {
                                     class="mono-cell mono-cell-pl asset-group-end<?= $isMaxPnl ? ' cell-max-hit' : '' ?><?= (!$isMaxPnl && $isMinPnl) ? ' cell-min-hit' : '' ?>"
                                     data-sort-value="<?= $value === null ? '' : e(number_format((float) $value['unrealized_pnl'], 8, '.', '')) ?>"
                                     <?= $pnlCellStyle !== '' ? 'style="' . e($pnlCellStyle) . '"' : '' ?>
+                                    <?= $pnlTooltip !== '' ? 'title="' . e($pnlTooltip) . '"' : '' ?>
                                 >
                                     <?php if ($value === null): ?>
                                         -
@@ -377,6 +422,8 @@ main.container {
                 </tbody>
             </table>
         </div>
+
+        <div class="andamento-pagination andamento-pagination-bottom" id="andamentoPagerBottom"></div>
 
         <div class="andamento-export-actions">
             <a class="btn export-btn export-btn-excel" href="<?= e(app_base_path()) ?>/andamento.php?export=xlsx">
@@ -399,14 +446,28 @@ main.container {
 
     const headers = Array.from(table.querySelectorAll('thead th.sortable'));
     const tbody = table.querySelector('tbody');
+    const pageSizeSelect = document.getElementById('andamentoPageSize');
+    const pager = document.getElementById('andamentoPager');
+    const pagerBottom = document.getElementById('andamentoPagerBottom');
+    const storageKey = 'portfolio.andamento.pageSize';
+    let allRows = Array.from(tbody.querySelectorAll('tr'));
     let currentIndex = 0;
     let currentDirection = 'asc';
+    let currentPage = 1;
+    let pageSize = localStorage.getItem(storageKey) || '25';
 
     const parseValue = (value, type) => {
         if (type === 'number') {
             return value === '' ? Number.NEGATIVE_INFINITY : Number(value);
         }
         return value;
+    };
+
+    const pageSizeValue = () => pageSize === 'all' ? allRows.length : Number(pageSize);
+
+    const pageCount = () => {
+        const size = pageSizeValue();
+        return size <= 0 ? 1 : Math.max(1, Math.ceil(allRows.length / size));
     };
 
     const updateHeaderState = () => {
@@ -418,11 +479,71 @@ main.container {
         });
     };
 
+    const buildPagerContent = (target) => {
+        if (!target) return;
+
+        const totalPages = pageCount();
+        currentPage = Math.min(Math.max(1, currentPage), totalPages);
+        const size = pageSizeValue();
+        const start = allRows.length === 0 ? 0 : ((currentPage - 1) * size) + 1;
+        const end = pageSize === 'all' ? allRows.length : Math.min(allRows.length, currentPage * size);
+
+        target.replaceChildren();
+
+        const summary = document.createElement('span');
+        summary.className = 'andamento-page-summary';
+        summary.textContent = pageSize === 'all'
+            ? `Tutto lo storico (${allRows.length} righe)`
+            : `Righe ${start}-${end} di ${allRows.length}`;
+        target.appendChild(summary);
+
+        if (pageSize === 'all' || totalPages <= 1) {
+            return;
+        }
+
+        const prev = document.createElement('button');
+        prev.type = 'button';
+        prev.className = 'btn-secondary btn-sm';
+        prev.textContent = 'Indietro';
+        prev.disabled = currentPage <= 1;
+        prev.addEventListener('click', () => {
+            currentPage = Math.max(1, currentPage - 1);
+            renderTable();
+        });
+
+        const pageLabel = document.createElement('span');
+        pageLabel.className = 'andamento-page-count';
+        pageLabel.textContent = `Pagina ${currentPage}/${totalPages}`;
+
+        const next = document.createElement('button');
+        next.type = 'button';
+        next.className = 'btn-secondary btn-sm';
+        next.textContent = 'Avanti';
+        next.disabled = currentPage >= totalPages;
+        next.addEventListener('click', () => {
+            currentPage = Math.min(totalPages, currentPage + 1);
+            renderTable();
+        });
+
+        target.append(prev, pageLabel, next);
+    };
+
+    const renderTable = () => {
+        const size = pageSizeValue();
+        const totalPages = pageCount();
+        currentPage = Math.min(Math.max(1, currentPage), totalPages);
+        const startIndex = pageSize === 'all' ? 0 : (currentPage - 1) * size;
+        const visibleRows = pageSize === 'all' ? allRows : allRows.slice(startIndex, startIndex + size);
+
+        tbody.replaceChildren(...visibleRows);
+        buildPagerContent(pager);
+        buildPagerContent(pagerBottom);
+    };
+
     const sortTable = (index, direction) => {
         const type = headers[index].dataset.sortType || 'text';
-        const rows = Array.from(tbody.querySelectorAll('tr'));
 
-        rows.sort((rowA, rowB) => {
+        allRows.sort((rowA, rowB) => {
             const cellA = rowA.children[index];
             const cellB = rowB.children[index];
             const valueA = parseValue(cellA?.dataset.sortValue ?? cellA?.textContent.trim() ?? '', type);
@@ -437,10 +558,11 @@ main.container {
             return 0;
         });
 
-        rows.forEach((row) => tbody.appendChild(row));
         currentIndex = index;
         currentDirection = direction;
+        currentPage = 1;
         updateHeaderState();
+        renderTable();
     };
 
     headers.forEach((header, index) => {
@@ -450,10 +572,42 @@ main.container {
         });
     });
 
+    if (pageSizeSelect) {
+        const allowedPageSizes = Array.from(pageSizeSelect.options).map((option) => option.value);
+        if (!allowedPageSizes.includes(pageSize)) {
+            pageSize = '25';
+        }
+        pageSizeSelect.value = pageSize;
+        pageSizeSelect.addEventListener('change', () => {
+            pageSize = pageSizeSelect.value;
+            localStorage.setItem(storageKey, pageSize);
+            currentPage = 1;
+            renderTable();
+        });
+    }
+
     sortTable(0, 'desc');
 
     document.getElementById('andamentoPrintButton')?.addEventListener('click', () => {
+        const previousPageSize = pageSize;
+        const previousPage = currentPage;
+        let restored = false;
+
+        const restoreView = () => {
+            if (restored) return;
+            restored = true;
+            pageSize = previousPageSize;
+            currentPage = previousPage;
+            renderTable();
+            window.removeEventListener('afterprint', restoreView);
+        };
+
+        pageSize = 'all';
+        currentPage = 1;
+        renderTable();
+        window.addEventListener('afterprint', restoreView);
         window.print();
+        setTimeout(restoreView, 1200);
     });
 })();
 </script>

@@ -845,7 +845,52 @@ button:hover,
 }
 
 .andamento-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
     margin-bottom: 0.75rem;
+}
+
+.andamento-controls,
+.andamento-pagination {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.andamento-page-size {
+    display: inline-flex;
+    grid-template-columns: none;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
+.andamento-page-size select {
+    min-width: 86px;
+    padding: 0.42rem 0.65rem;
+    border-radius: 8px;
+}
+
+.andamento-page-summary,
+.andamento-page-count {
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.andamento-pagination button:disabled {
+    cursor: default;
+    opacity: 0.45;
+    filter: none;
+}
+
+.andamento-pagination-bottom {
+    justify-content: flex-end;
+    margin-top: 0.75rem;
 }
 
 .andamento-export-actions {
@@ -955,6 +1000,7 @@ button:hover,
     }
 
     .andamento-toolbar,
+    .andamento-pagination,
     .andamento-export-actions {
         display: none !important;
     }
