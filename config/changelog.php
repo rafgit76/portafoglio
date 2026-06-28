@@ -2,6 +2,17 @@
 
 return [
     [
+        'version' => '1.3.1',
+        'date' => '2026-06-28',
+        'title' => 'Estremi P/L nello storico snapshot',
+        'changes' => [
+            'Evidenziata nello storico snapshot la riga con massimo P/L totale.',
+            'Evidenziata nello storico snapshot la riga con minimo P/L totale.',
+            'Aggiunte etichette visive Massimo P/L e Minimo P/L accanto al valore.',
+            'Migliorata la spaziatura dei pulsanti azione nello storico snapshot evitando tagli a bordo tabella.',
+        ],
+    ],
+    [
         'version' => '1.3.0',
         'date' => '2026-06-28',
         'title' => 'Dettaglio singolo titolo',

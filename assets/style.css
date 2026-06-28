@@ -295,6 +295,37 @@ button:hover,
     gap: 0.5rem;
 }
 
+.snapshots-table {
+    min-width: 1080px;
+}
+
+.snapshot-file-cell {
+    max-width: 270px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.snapshot-actions-cell {
+    width: 150px;
+    min-width: 150px;
+}
+
+.snapshot-actions {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+}
+
+.snapshot-actions form {
+    margin: 0;
+}
+
+.snapshot-actions .btn-link,
+.snapshot-actions .btn-danger {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
 .btn-danger {
     background: #fff0f1;
     color: var(--bad);
@@ -537,6 +568,48 @@ button:hover,
 
 .asset-history-table {
     margin-top: 0.85rem;
+}
+
+.snapshot-row-max {
+    background: #edf9f1;
+    box-shadow: inset 4px 0 0 #3cb66a;
+}
+
+.snapshot-row-min {
+    background: #fff0f2;
+    box-shadow: inset 4px 0 0 #d35568;
+}
+
+tbody tr.snapshot-row-max:hover {
+    background: #e5f6eb;
+}
+
+tbody tr.snapshot-row-min:hover {
+    background: #ffe8ec;
+}
+
+.snapshot-extreme-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.5rem;
+    padding: 0.22rem 0.45rem;
+    border-radius: 999px;
+    font-family: "Space Grotesk", "Segoe UI", Tahoma, sans-serif;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.snapshot-extreme-max {
+    color: #0d5f31;
+    background: #dff6e7;
+    border: 1px solid #9fd7b3;
+}
+
+.snapshot-extreme-min {
+    color: #972036;
+    background: #ffe1e6;
+    border: 1px solid #efb4bd;
 }
 
 

@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare l'export Fineco (`.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `1.3.0`
+Versione corrente: `1.3.1`
 
 ## Deploy (FTP)
 

@@ -31,6 +31,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 
 $rows = $pdo->query('SELECT id, snapshot_date, source_file_name, total_cost_basis, total_market_value, total_unrealized_pnl, created_at FROM pf_snapshots ORDER BY snapshot_date DESC, id DESC')->fetchAll();
 
+$maxPnl = null;
+$minPnl = null;
+foreach ($rows as $row) {
+    $pnl = (float) $row['total_unrealized_pnl'];
+    if ($maxPnl === null || $pnl > $maxPnl) {
+        $maxPnl = $pnl;
+    }
+    if ($minPnl === null || $pnl < $minPnl) {
+        $minPnl = $pnl;
+    }
+}
+
 include __DIR__ . '/partials/header.php';
 ?>
 <section class="panel">
@@ -42,7 +54,7 @@ include __DIR__ . '/partials/header.php';
     <?php if (!$rows): ?>
         <p>Nessuno snapshot disponibile.</p>
     <?php else: ?>
-    <table>
+    <table class="snapshots-table">
         <thead>
             <tr>
                 <th>Data</th>
@@ -56,15 +68,28 @@ include __DIR__ . '/partials/header.php';
         </thead>
         <tbody>
             <?php foreach ($rows as $r): ?>
-            <tr>
+            <?php
+            $pnl = (float) $r['total_unrealized_pnl'];
+            $isMaxPnl = $maxPnl !== null && abs($pnl - $maxPnl) < 0.00001;
+            $isMinPnl = $minPnl !== null && abs($pnl - $minPnl) < 0.00001;
+            $rowClass = $isMaxPnl ? 'snapshot-row-max' : ($isMinPnl ? 'snapshot-row-min' : '');
+            ?>
+            <tr class="<?= e($rowClass) ?>">
                 <td><?= e($r['snapshot_date']) ?></td>
-                <td><?= e($r['source_file_name'] ?? '-') ?></td>
+                <td class="snapshot-file-cell"><?= e($r['source_file_name'] ?? '-') ?></td>
                 <td>EUR <?= number_format((float) $r['total_cost_basis'], 2, ',', '.') ?></td>
                 <td>EUR <?= number_format((float) $r['total_market_value'], 2, ',', '.') ?></td>
-                <td class="<?= (float) $r['total_unrealized_pnl'] >= 0 ? 'pos' : 'neg' ?>">EUR <?= number_format((float) $r['total_unrealized_pnl'], 2, ',', '.') ?></td>
+                <td class="<?= $pnl >= 0 ? 'pos' : 'neg' ?>">
+                    EUR <?= number_format($pnl, 2, ',', '.') ?>
+                    <?php if ($isMaxPnl): ?>
+                        <span class="snapshot-extreme-badge snapshot-extreme-max">Massimo P/L</span>
+                    <?php elseif ($isMinPnl): ?>
+                        <span class="snapshot-extreme-badge snapshot-extreme-min">Minimo P/L</span>
+                    <?php endif; ?>
+                </td>
                 <td><?= e($r['created_at']) ?></td>
-                <td>
-                    <div class="actions-inline">
+                <td class="snapshot-actions-cell">
+                    <div class="actions-inline snapshot-actions">
                         <a class="btn-link" href="<?= e(app_base_path()) ?>/snapshot.php?id=<?= (int) $r['id'] ?>">Dettaglio</a>
                         <form method="post" onsubmit="return confirm('Confermi eliminazione snapshot <?= e($r['snapshot_date']) ?>?');">
                             <input type="hidden" name="action" value="delete_snapshot">
