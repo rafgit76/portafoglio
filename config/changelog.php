@@ -2,6 +2,16 @@
 
 return [
     [
+        'version' => '1.2.5',
+        'date' => '2026-06-28',
+        'title' => 'Deploy piu stabile',
+        'changes' => [
+            'Spostato Chart.js in assets/vendor per evitare dipendenze CDN a runtime.',
+            'Aggiunto script PowerShell per creare una cartella FTP pulita con timestamp fino ai minuti.',
+            'Aggiornata documentazione deploy con il flusso di pubblicazione consigliato.',
+        ],
+    ],
+    [
         'version' => '1.2.4',
         'date' => '2026-06-18',
         'title' => 'Andamento piu navigabile',

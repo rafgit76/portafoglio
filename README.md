@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare l'export Fineco (`.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `1.2.4`
+Versione corrente: `1.2.5`
 
 ## Deploy (FTP)
 
@@ -18,6 +18,12 @@ Carica tutto in:
 4. Verifica permessi scrittura cartella `storage/uploads`.
 5. Vai su `/apps/portafoglio/upload.php` e carica il primo file Fineco.
 
+Per creare una cartella FTP completa e pulita puoi eseguire:
+
+`.\build_deploy.ps1`
+
+Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto, includendo `vendor/` e la configurazione locale se presente, ma lasciando fuori `.git`, file di sviluppo, cache e upload storici.
+
 `config/config.php` non contiene segreti: legge variabili ambiente `PORTFOLIO_DB_*` oppure il file locale `config/config.local.php`, escluso da Git.
 
 ## Hardening leggero incluso
@@ -29,6 +35,7 @@ Carica tutto in:
 - footer runtime pubblico ridotto al minimo per default
 - versione app e changelog visibili dal footer
 - configurazione applicativa esplicita per target PHP 8.4
+- libreria Chart.js servita localmente da `assets/vendor/` senza dipendenza CDN runtime
 
 ## Opzioni esterne
 

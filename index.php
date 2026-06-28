@@ -245,7 +245,7 @@ include __DIR__ . '/partials/header.php';
 <?php endif; ?>
 
 <?php if (count($historyForChart) > 0): ?>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="<?= e(app_base_path()) ?>/assets/vendor/chart.umd.min.js"></script>
 <script>
 const labels = <?= json_encode($chartLabels, JSON_UNESCAPED_UNICODE) ?>;
 const marketData = <?= json_encode($chartMarket) ?>;

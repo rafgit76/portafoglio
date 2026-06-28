@@ -156,7 +156,7 @@ include __DIR__ . '/partials/header.php';
 </section>
 
 <?php if (!empty($compositionRows)): ?>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="<?= e(app_base_path()) ?>/assets/vendor/chart.umd.min.js"></script>
 <script>
 const compLabels = <?= json_encode($pieLabels, JSON_UNESCAPED_UNICODE) ?>;
 const compValues = <?= json_encode($pieValues) ?>;
