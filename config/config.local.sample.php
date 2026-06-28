@@ -11,7 +11,7 @@ return [
     ],
     'app' => [
         'base_path' => '/apps/portafoglio',
-        'app_version' => '1.2.5',
+        'app_version' => '1.3.0',
         'enable_fx' => true,
         'enable_news' => false,
     ],

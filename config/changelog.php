@@ -2,6 +2,17 @@
 
 return [
     [
+        'version' => '1.3.0',
+        'date' => '2026-06-28',
+        'title' => 'Dettaglio singolo titolo',
+        'changes' => [
+            'Aggiunta pagina dettaglio per ogni titolo con storico completo dagli snapshot.',
+            'Aggiunti grafici dedicati per valore, P/L, peso nel portafoglio e quantita.',
+            'Aggiunti indicatori di massimo/minimo, distanza dal massimo P/L, delta dal primo snapshot e drawdown.',
+            'Aggiunti collegamenti al dettaglio titolo da Strumenti, Snapshot e intestazioni della pagina Andamento.',
+        ],
+    ],
+    [
         'version' => '1.2.5',
         'date' => '2026-06-28',
         'title' => 'Deploy piu stabile',

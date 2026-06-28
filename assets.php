@@ -136,18 +136,20 @@ include __DIR__ . '/partials/header.php';
                 <th>Valuta</th>
                 <th>Ultimo snapshot</th>
                 <th>Valore ultimo snapshot</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
             <?php foreach ($rows as $r): ?>
             <tr>
                 <td><?= e($r['asset_type']) ?></td>
-                <td><?= e($r['name']) ?></td>
+                <td><a class="btn-link" href="<?= e(app_base_path()) ?>/asset.php?id=<?= (int) $r['id'] ?>"><?= e($r['name']) ?></a></td>
                 <td><?= e($r['isin'] ?? '-') ?></td>
                 <td><?= e($r['ticker'] ?? '-') ?></td>
                 <td><?= e($r['currency']) ?></td>
                 <td><?= e($r['last_snapshot'] ?? '-') ?></td>
                 <td>EUR <?= number_format((float) $r['latest_market_value'], 2, ',', '.') ?></td>
+                <td><a class="btn-link" href="<?= e(app_base_path()) ?>/asset.php?id=<?= (int) $r['id'] ?>">Dettaglio</a></td>
             </tr>
             <?php endforeach; ?>
         </tbody>

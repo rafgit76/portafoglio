@@ -20,7 +20,7 @@ if (!$snapshot) {
 }
 
 $posSt = $pdo->prepare(
-    'SELECT p.*, a.name, a.isin, a.ticker, a.asset_type
+    'SELECT p.*, a.id AS asset_id, a.name, a.isin, a.ticker, a.asset_type
      FROM pf_snapshot_positions p
      JOIN pf_assets a ON a.id = p.asset_id
      WHERE p.snapshot_id = :id
@@ -65,7 +65,7 @@ include __DIR__ . '/partials/header.php';
         <tbody>
             <?php foreach ($positions as $p): ?>
             <tr>
-                <td><?= e($p['name']) ?></td>
+                <td><a class="btn-link" href="<?= e(app_base_path()) ?>/asset.php?id=<?= (int) $p['asset_id'] ?>"><?= e($p['name']) ?></a></td>
                 <td><?= e($p['asset_type']) ?></td>
                 <td><?= e($p['isin'] ?? '-') ?></td>
                 <td><?= number_format((float) $p['quantity'], 2, ',', '.') ?></td>

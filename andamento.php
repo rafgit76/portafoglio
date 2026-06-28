@@ -301,7 +301,7 @@ main.container {
                                 colspan="3"
                                 title="<?= e($column['label']) ?> - <?= e($column['asset_type']) ?>"
                             >
-                                <div class="andamento-heading-title"><?= e($column['short_label']) ?></div>
+                                <a class="andamento-heading-title andamento-heading-link" href="<?= e(app_base_path()) ?>/asset.php?id=<?= (int) $column['id'] ?>"><?= e($column['short_label']) ?></a>
                             </th>
                         <?php endforeach; ?>
                     </tr>

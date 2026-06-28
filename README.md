@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare l'export Fineco (`.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `1.2.5`
+Versione corrente: `1.3.0`
 
 ## Deploy (FTP)
 
@@ -52,6 +52,7 @@ In `config/config.local.php` puoi regolare:
 - `snapshots.php`: storico snapshot
 - `snapshot.php?id=...`: dettaglio snapshot
 - `assets.php`: anagrafica strumenti
+- `asset.php?id=...`: dettaglio storico di un singolo titolo
 - `ai_report.php`: report AI sullo storico snapshot
 - `changelog.php`: storico versioni applicative
 
