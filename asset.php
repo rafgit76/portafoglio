@@ -223,15 +223,25 @@ include __DIR__ . '/partials/header.php';
                 $rowCost = (float) $row['cost_basis'];
                 $rowPnl = (float) $row['unrealized_pnl'];
                 $rowPnlPct = $rowCost > 0 ? ($rowPnl / $rowCost) * 100 : 0.0;
+                $isMaxPnl = $maxPnl !== null && abs($rowPnl - (float) $maxPnl['value']) < 0.00001;
+                $isMinPnl = $minPnl !== null && abs($rowPnl - (float) $minPnl['value']) < 0.00001;
+                $rowClass = $isMaxPnl ? 'snapshot-row-max' : ($isMinPnl ? 'snapshot-row-min' : '');
                 ?>
-                <tr>
+                <tr class="<?= e($rowClass) ?>">
                     <td><?= e((string) $row['snapshot_date']) ?></td>
                     <td><?= e($formatNumber((float) $row['quantity'], 2)) ?></td>
                     <td><?= e($formatNumber((float) $row['avg_load_price'], 4)) ?></td>
                     <td><?= e($formatNumber((float) $row['current_price'], 4)) ?></td>
                     <td><?= e($formatMoney($rowCost)) ?></td>
                     <td><?= e($formatMoney((float) $row['market_value'])) ?></td>
-                    <td class="<?= $rowPnl >= 0 ? 'pos' : 'neg' ?>"><?= e($formatMoney($rowPnl)) ?></td>
+                    <td class="<?= $rowPnl >= 0 ? 'pos' : 'neg' ?>">
+                        <?= e($formatMoney($rowPnl)) ?>
+                        <?php if ($isMaxPnl): ?>
+                            <span class="snapshot-extreme-badge snapshot-extreme-max">Massimo P/L</span>
+                        <?php elseif ($isMinPnl): ?>
+                            <span class="snapshot-extreme-badge snapshot-extreme-min">Minimo P/L</span>
+                        <?php endif; ?>
+                    </td>
                     <td class="<?= $rowPnlPct >= 0 ? 'pos' : 'neg' ?>"><?= e($formatPct($rowPnlPct)) ?></td>
                     <td><?= e($formatPct(((float) $row['weight_pct']) * 100)) ?></td>
                     <td><a class="btn-link" href="<?= e(app_base_path()) ?>/snapshot.php?id=<?= (int) $row['snapshot_id'] ?>">Apri</a></td>

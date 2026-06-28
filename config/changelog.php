@@ -2,6 +2,16 @@
 
 return [
     [
+        'version' => '1.3.2',
+        'date' => '2026-06-28',
+        'title' => 'Estremi P/L nel dettaglio titolo',
+        'changes' => [
+            'Evidenziata nella pagina dettaglio titolo la riga con massimo P/L storico del singolo asset.',
+            'Evidenziata nella pagina dettaglio titolo la riga con minimo P/L storico del singolo asset.',
+            'Aggiunte etichette visive Massimo P/L e Minimo P/L nella tabella storico snapshot del titolo.',
+        ],
+    ],
+    [
         'version' => '1.3.1',
         'date' => '2026-06-28',
         'title' => 'Estremi P/L nello storico snapshot',
