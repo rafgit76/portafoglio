@@ -2,6 +2,17 @@
 
 return [
     [
+        'version' => '1.3.3',
+        'date' => '2026-07-02',
+        'title' => 'Export dettaglio titolo',
+        'changes' => [
+            'Aggiunto export Excel nella pagina dettaglio del singolo titolo.',
+            'Aggiunto pulsante Stampa PDF nella pagina dettaglio del singolo titolo.',
+            'Ottimizzata la resa di stampa dello storico snapshot del titolo.',
+            'Inclusi statistiche iniziali e grafici nella stampa PDF del dettaglio titolo.',
+        ],
+    ],
+    [
         'version' => '1.3.2',
         'date' => '2026-06-28',
         'title' => 'Estremi P/L nel dettaglio titolo',

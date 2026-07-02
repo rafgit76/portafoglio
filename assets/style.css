@@ -845,7 +845,9 @@ tbody tr.snapshot-row-min:hover {
     .topbar,
     .runtime-footer,
     .flash,
-    .ai-report-actions {
+    .ai-report-actions,
+    .asset-actions,
+    .asset-export-actions {
         display: none !important;
     }
 
@@ -893,6 +895,73 @@ tbody tr.snapshot-row-min:hover {
     .ai-report-panel li {
         break-inside: avoid;
         page-break-inside: avoid;
+    }
+
+    .asset-chart-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.45rem;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .asset-kpi-grid,
+    .asset-metric-grid,
+    .chart-card,
+    .chart-wrap {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .asset-metric-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.45rem;
+    }
+
+    .asset-metric {
+        padding: 0.45rem;
+    }
+
+    .asset-metric span {
+        font-size: 7pt;
+    }
+
+    .asset-metric strong {
+        font-size: 9pt;
+    }
+
+    .chart-card h3 {
+        font-size: 9pt;
+    }
+
+    .chart-wrap,
+    .chart-wrap-compact {
+        height: 47mm;
+        padding: 0.2rem;
+    }
+
+    .asset-print-mode .asset-hero,
+    .asset-print-mode .asset-kpi-grid,
+    .asset-print-mode .asset-metric-grid,
+    .asset-print-mode .asset-chart-grid {
+        display: grid !important;
+    }
+
+    .asset-print-mode .asset-history-table {
+        break-before: page;
+        page-break-before: always;
+    }
+
+    .asset-history-table {
+        min-width: 0;
+        width: 100%;
+        font-size: 8pt;
+    }
+
+    .asset-history-table th,
+    .asset-history-table td {
+        padding: 3px 4px;
+        font-size: 8pt;
+        white-space: nowrap;
     }
 }
 

@@ -117,6 +117,95 @@ $identityBits = array_filter([
     (string) ($asset['currency'] ?? ''),
 ], static fn(string $value): bool => trim($value) !== '');
 
+if (($_GET['export'] ?? '') === 'xlsx') {
+    if (!class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class)) {
+        http_response_code(500);
+        exit('PhpSpreadsheet non disponibile. Esegui composer install e carica vendor/.');
+    }
+
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $spreadsheet->getProperties()
+        ->setCreator('Portfolio Investimenti')
+        ->setTitle('Dettaglio titolo - ' . $assetName)
+        ->setSubject('Storico snapshot titolo');
+
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setTitle(mb_substr(preg_replace('/[\\\\\\/\\?\\*\\[\\]:]/', ' ', $assetName), 0, 31) ?: 'Dettaglio titolo');
+
+    $generatedAt = (new DateTimeImmutable('now'))->format('Y-m-d H:i');
+    $sheet->setCellValue('A1', 'Dettaglio titolo - ' . $assetName);
+    $sheet->setCellValue('A2', implode(' - ', $identityBits));
+    $sheet->setCellValue('A3', 'Generato il ' . $generatedAt . ' - Snapshot: ' . count($history));
+
+    $headers = ['Data', 'Quantita', 'PMC', 'Prezzo', 'Valore carico', 'Valore mercato', 'P/L', 'P/L %', 'Peso %'];
+    $headerRow = 5;
+    foreach ($headers as $index => $header) {
+        $sheet->setCellValue(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1) . $headerRow, $header);
+    }
+
+    $dataRow = 6;
+    foreach (array_reverse($history) as $row) {
+        $rowCost = (float) $row['cost_basis'];
+        $rowPnl = (float) $row['unrealized_pnl'];
+        $rowPnlPct = $rowCost > 0 ? ($rowPnl / $rowCost) * 100 : 0.0;
+
+        $sheet->setCellValue('A' . $dataRow, (string) $row['snapshot_date']);
+        $sheet->setCellValueExplicit('B' . $dataRow, (float) $row['quantity'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC);
+        $sheet->setCellValueExplicit('C' . $dataRow, (float) $row['avg_load_price'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC);
+        $sheet->setCellValueExplicit('D' . $dataRow, (float) $row['current_price'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC);
+        $sheet->setCellValueExplicit('E' . $dataRow, $rowCost, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC);
+        $sheet->setCellValueExplicit('F' . $dataRow, (float) $row['market_value'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC);
+        $sheet->setCellValueExplicit('G' . $dataRow, $rowPnl, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC);
+        $sheet->setCellValueExplicit('H' . $dataRow, $rowPnlPct, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC);
+        $sheet->setCellValueExplicit('I' . $dataRow, ((float) $row['weight_pct']) * 100, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC);
+        $dataRow++;
+    }
+
+    $lastDataRow = max($headerRow, $dataRow - 1);
+    $sheet->mergeCells('A1:I1');
+    $sheet->mergeCells('A2:I2');
+    $sheet->mergeCells('A3:I3');
+    $sheet->freezePane('A6');
+    $sheet->setAutoFilter('A' . $headerRow . ':I' . $lastDataRow);
+
+    $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
+    $sheet->getStyle('A2:A3')->getFont()->setSize(10)->getColor()->setARGB('FF647681');
+    $sheet->getStyle('A' . $headerRow . ':I' . $headerRow)->getFont()->setBold(true);
+    $sheet->getStyle('A' . $headerRow . ':I' . $headerRow)
+        ->getFill()
+        ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+        ->getStartColor()
+        ->setARGB('FFE7F0F4');
+    $sheet->getStyle('A' . $headerRow . ':I' . $lastDataRow)
+        ->getBorders()
+        ->getAllBorders()
+        ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN)
+        ->getColor()
+        ->setARGB('FFD8E2E8');
+
+    $sheet->getStyle('B6:B' . $lastDataRow)->getNumberFormat()->setFormatCode('#,##0.00');
+    $sheet->getStyle('C6:D' . $lastDataRow)->getNumberFormat()->setFormatCode('#,##0.0000');
+    $sheet->getStyle('E6:G' . $lastDataRow)->getNumberFormat()->setFormatCode('#,##0.00');
+    $sheet->getStyle('H6:I' . $lastDataRow)->getNumberFormat()->setFormatCode('#,##0.00');
+
+    foreach (range('A', 'I') as $column) {
+        $sheet->getColumnDimension($column)->setAutoSize(true);
+    }
+
+    $safeName = preg_replace('/[^A-Za-z0-9_-]+/', '_', $assetName);
+    $filename = 'dettaglio_titolo_' . trim((string) $safeName, '_') . '_' . (new DateTimeImmutable('now'))->format('Ymd_His') . '.xlsx';
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: max-age=0');
+
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    $writer->save('php://output');
+    exit;
+}
+
 include __DIR__ . '/partials/header.php';
 ?>
 <section class="panel asset-hero">
@@ -249,6 +338,16 @@ include __DIR__ . '/partials/header.php';
             <?php endforeach; ?>
         </tbody>
     </table>
+    <div class="andamento-export-actions asset-export-actions">
+        <a class="btn export-btn export-btn-excel" href="<?= e(app_base_path()) ?>/asset.php?id=<?= $assetId ?>&amp;export=xlsx">
+            <span class="export-file-icon" aria-hidden="true">XLS</span>
+            <span>Esporta Excel</span>
+        </a>
+        <button type="button" class="btn export-btn export-btn-pdf" id="assetPrintButton">
+            <span class="export-file-icon" aria-hidden="true">PDF</span>
+            <span>Stampa PDF</span>
+        </button>
+    </div>
 </section>
 
 <script src="<?= e(app_base_path()) ?>/assets/vendor/chart.umd.min.js"></script>
@@ -314,6 +413,22 @@ include __DIR__ . '/partials/header.php';
     makeLineChart('assetQuantityChart', [
         { label: 'Quantita', data: quantityData, borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,0.10)', tension: 0.25, borderWidth: 2, pointRadius: 3 }
     ], 'Quantita', (value) => numIt.format(value));
+
+    document.getElementById('assetPrintButton')?.addEventListener('click', () => {
+        let restored = false;
+        const restorePrintMode = () => {
+            if (restored) return;
+            restored = true;
+            document.body.classList.remove('asset-print-mode');
+            window.removeEventListener('afterprint', restorePrintMode);
+        };
+
+        document.body.classList.add('asset-print-mode');
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        window.addEventListener('afterprint', restorePrintMode);
+        window.print();
+        setTimeout(restorePrintMode, 1200);
+    });
 })();
 </script>
 
