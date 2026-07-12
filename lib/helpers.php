@@ -133,6 +133,59 @@ function uploaded_xlsx_looks_valid(string $path): bool
     return $hasWorkbook && $hasContentTypes;
 }
 
+function uploaded_spreadsheet_type(string $path, string $originalFileName): ?string
+{
+    if (!is_file($path) || !is_readable($path)) {
+        return null;
+    }
+
+    $extension = strtolower(pathinfo($originalFileName, PATHINFO_EXTENSION));
+    if (!in_array($extension, ['xls', 'xlsx'], true)) {
+        return null;
+    }
+
+    $handle = @fopen($path, 'rb');
+    if (!$handle) {
+        return null;
+    }
+
+    $signature = fread($handle, 8);
+    fclose($handle);
+
+    if (!is_string($signature)) {
+        return null;
+    }
+
+    $hasExpectedSignature = $extension === 'xlsx'
+        ? substr($signature, 0, 2) === 'PK'
+        : $signature === "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
+
+    if (!$hasExpectedSignature) {
+        return null;
+    }
+
+    if ($extension === 'xlsx' && !uploaded_xlsx_looks_valid($path)) {
+        return null;
+    }
+
+    if (class_exists(\PhpOffice\PhpSpreadsheet\IOFactory::class)) {
+        try {
+            $identifiedType = \PhpOffice\PhpSpreadsheet\IOFactory::identify($path);
+        } catch (Throwable $e) {
+            return null;
+        }
+
+        $expectedType = $extension === 'xls' ? 'Xls' : 'Xlsx';
+        if ($identifiedType !== $expectedType) {
+            return null;
+        }
+    } elseif ($extension === 'xls') {
+        return null;
+    }
+
+    return $extension;
+}
+
 function normalize_ascii(string $value): string
 {
     $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -154,20 +207,50 @@ function normalize_ascii(string $value): string
     return $value;
 }
 
-function parse_decimal($value): float
+function parse_decimal_nullable($value): ?float
 {
     if ($value === null || $value === '') {
-        return 0.0;
+        return null;
+    }
+
+    if (is_int($value) || is_float($value)) {
+        $number = (float) $value;
+        return is_finite($number) ? $number : null;
     }
 
     if (is_numeric($value)) {
-        return (float) $value;
+        $number = (float) $value;
+        return is_finite($number) ? $number : null;
     }
 
-    $normalized = str_replace(['.', ' '], ['', ''], (string) $value);
-    $normalized = str_replace(',', '.', $normalized);
+    $normalized = trim((string) $value);
+    $normalized = str_replace(["\u{00A0}", ' ', '€', '%'], '', $normalized);
 
-    return is_numeric($normalized) ? (float) $normalized : 0.0;
+    $lastComma = strrpos($normalized, ',');
+    $lastDot = strrpos($normalized, '.');
+
+    if ($lastComma !== false && $lastDot !== false) {
+        if ($lastComma > $lastDot) {
+            $normalized = str_replace('.', '', $normalized);
+            $normalized = str_replace(',', '.', $normalized);
+        } else {
+            $normalized = str_replace(',', '', $normalized);
+        }
+    } elseif ($lastComma !== false) {
+        $normalized = str_replace(',', '.', $normalized);
+    }
+
+    if (!is_numeric($normalized)) {
+        return null;
+    }
+
+    $number = (float) $normalized;
+    return is_finite($number) ? $number : null;
+}
+
+function parse_decimal($value): float
+{
+    return parse_decimal_nullable($value) ?? 0.0;
 }
 
 function parse_percentage_to_decimal($value): float

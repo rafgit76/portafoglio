@@ -1,8 +1,8 @@
 # Portfolio App (Aruba PHP/MySQL, PHP 8.4 ready)
 
-App PHP 8.4 ready per Aruba Linux, pensata per importare l'export Fineco (`.xlsx`) e visualizzare lo storico del portafoglio.
+App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `1.3.3`
+Versione corrente: `1.4.0`
 
 ## Deploy (FTP)
 
@@ -29,8 +29,8 @@ Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto,
 ## Hardening leggero incluso
 
 - protezione CSRF su upload e cancellazione snapshot
-- validazione upload XLSX piu rigorosa
-- parser Fineco con detection dinamica intestazioni e supporto PhpSpreadsheet
+- validazione upload Excel piu rigorosa
+- parser Fineco con detection dinamica intestazioni e supporto diretto `.xls`/`.xlsx` tramite PhpSpreadsheet
 - cartella `storage/` non esposta pubblicamente
 - footer runtime pubblico ridotto al minimo per default
 - versione app e changelog visibili dal footer
@@ -41,6 +41,7 @@ Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto,
 
 In `config/config.local.php` puoi regolare:
 
+- `timezone`: fuso orario usato per data, ora e nomi automatici degli export.
 - `enable_fx`: abilita/disabilita EUR/USD da ECB.
 - `enable_news`: abilita/disabilita le news RSS in dashboard.
 - `external_fetch_timeout_seconds`: timeout delle chiamate esterne.
@@ -48,7 +49,7 @@ In `config/config.local.php` puoi regolare:
 ## Pagine
 
 - `index.php`: dashboard
-- `upload.php`: upload file Fineco
+- `upload.php`: import diretto file Fineco `.xls`/`.xlsx` e conversione opzionale in `.xlsx`
 - `snapshots.php`: storico snapshot
 - `snapshot.php?id=...`: dettaglio snapshot
 - `assets.php`: anagrafica strumenti

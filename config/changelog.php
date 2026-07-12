@@ -2,6 +2,19 @@
 
 return [
     [
+        'version' => '1.4.0',
+        'date' => '2026-07-12',
+        'title' => 'Import diretto Fineco XLS',
+        'changes' => [
+            'Aggiunto import diretto dei file .xls originali scaricati da Fineco.',
+            'Mantenuta la compatibilita con gli export .xlsx gia supportati.',
+            'Aggiunto riconoscimento del formato Excel reale prima dell\'elaborazione.',
+            'Generato automaticamente il nome file con data e ora dello snapshot.',
+            'Aggiunto download opzionale della versione convertita in formato .xlsx.',
+            'Eliminato il file temporaneo dal server al termine dell\'import.',
+        ],
+    ],
+    [
         'version' => '1.3.3',
         'date' => '2026-07-02',
         'title' => 'Export dettaglio titolo',

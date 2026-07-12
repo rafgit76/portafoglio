@@ -5,7 +5,7 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `1.1.0`
+- `1.4.0`
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto
@@ -22,7 +22,7 @@ Nome progetto:
 - Portafoglio Snapshot WEB APP
 
 Percorso locale:
-- `D:\PROGETTI_CODEX\aruba_portafoglio_app`
+- `C:\PROGETTI\portafoglio`
 
 Dominio / URL pubblico:
 - `https://www.raffimac.it/apps/portafoglio/index.php`
@@ -38,11 +38,11 @@ Stack:
 - PHP 8.4 target attuale di compatibilita
 - MySQL
 - HTML/CSS/JS vanilla
-- Chart.js via CDN
+- Chart.js servito localmente
 
 ## Scopo applicativo
 
-La web app serve a importare gli export Fineco in formato `.xlsx`, salvare snapshot storici del portafoglio e visualizzare:
+La web app serve a importare direttamente gli export Fineco in formato `.xls` o `.xlsx`, salvare snapshot storici del portafoglio e visualizzare:
 - dashboard riepilogativa
 - storico snapshot
 - dettaglio snapshot
@@ -60,6 +60,9 @@ La web app serve a importare gli export Fineco in formato `.xlsx`, salvare snaps
 - `snapshot.php`: dettaglio di un singolo snapshot
 - `compare.php`: confronto snapshot e export CSV
 - `assets.php`: anagrafica strumenti e composizione portafoglio
+- `asset.php`: dettaglio storico del singolo titolo
+- `ai_report.php`: report storico generato tramite Gemini
+- `changelog.php`: storico versioni applicative
 
 ### Bootstrap e librerie
 
@@ -67,7 +70,7 @@ La web app serve a importare gli export Fineco in formato `.xlsx`, salvare snaps
 - `lib/helpers.php`: config, escaping, redirect, flash, parsing numerico
 - `lib/db.php`: connessione PDO MySQL
 - `lib/fineco_importer.php`: import principale Fineco
-- `lib/fineco_xlsx_parser.php`: parser Fineco con detection dinamica intestazioni e supporto PhpSpreadsheet
+- `lib/fineco_xlsx_parser.php`: parser Fineco `.xls`/`.xlsx`, conversione e detection dinamica intestazioni
 - `lib/xlsx_reader.php`: fallback XLSX custom senza Composer
 - `lib/fx.php`: recupero e cache EUR/USD da ECB
 - `lib/news.php`: recupero e ranking news con cache locale
@@ -100,7 +103,7 @@ Relazione funzionale principale:
 
 ## Flusso operativo principale
 
-1. L'utente carica un file Fineco `.xlsx` da `upload.php`.
+1. L'utente carica direttamente un file Fineco `.xls` o `.xlsx` da `upload.php`.
 2. Il parser legge il primo foglio Excel.
 3. Le intestazioni vengono normalizzate.
 4. Le righe vengono aggregate per ISIN o chiave derivata.
@@ -145,10 +148,10 @@ Requisiti PHP rilevanti:
 - SimpleXML
 - ZipArchive
 - sessioni PHP
-- Composer vendor con PhpSpreadsheet consigliato per import XLSX robusto
+- Composer vendor con PhpSpreadsheet richiesto per import `.xls` e conversione `.xlsx`
 
 Dipendenze esterne runtime:
-- Chart.js da CDN
+- Chart.js servito da `assets/vendor/`
 - Google Fonts
 - feed ECB per EUR/USD
 - feed Google News RSS, disattivabile da config
@@ -174,7 +177,7 @@ Verifiche gia eseguite in questo thread:
 
 Hardening leggero applicato nel thread:
 - CSRF su upload e cancellazione snapshot
-- validazione upload XLSX rafforzata
+- validazione upload Excel `.xls`/`.xlsx` rafforzata
 - header HTTP di hardening lato PHP
 - cookie di sessione impostato con `HttpOnly` e `SameSite=Lax`
 - footer runtime pubblico minimizzato per default

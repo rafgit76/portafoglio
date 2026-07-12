@@ -5,7 +5,7 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/xlsx_reader.php';
 require_once __DIR__ . '/fineco_xlsx_parser.php';
 
-function import_fineco_xlsx(string $uploadedPath, string $originalFileName, string $snapshotDate): array
+function import_fineco_spreadsheet(string $uploadedPath, string $originalFileName, string $snapshotDate): array
 {
     $parser = new FinecoXlsxParser();
     $parsedPositions = $parser->parse($uploadedPath);
@@ -231,6 +231,11 @@ function import_fineco_xlsx(string $uploadedPath, string $originalFileName, stri
         $pdo->rollBack();
         throw $e;
     }
+}
+
+function import_fineco_xlsx(string $uploadedPath, string $originalFileName, string $snapshotDate): array
+{
+    return import_fineco_spreadsheet($uploadedPath, $originalFileName, $snapshotDate);
 }
 
 function normalize_headers(array $headerRow): array

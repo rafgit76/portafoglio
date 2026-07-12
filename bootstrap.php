@@ -8,6 +8,11 @@ if (is_file($autoloadPath)) {
 require_once __DIR__ . '/lib/helpers.php';
 require_once __DIR__ . '/lib/db.php';
 
+$appTimezone = (string) app_setting('timezone', 'Europe/Rome');
+if (in_array($appTimezone, timezone_identifiers_list(), true)) {
+    date_default_timezone_set($appTimezone);
+}
+
 if (session_status() !== PHP_SESSION_ACTIVE) {
     $isHttps = !empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off';
     session_set_cookie_params([

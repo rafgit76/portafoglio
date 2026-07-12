@@ -46,6 +46,7 @@ final class FinecoXlsxParser
         'quantita',
         'valore_di_carico',
         'valore_di_mercato_euro',
+        'var_euro',
     ];
 
     private const NUMERIC_FIELDS = [
@@ -58,56 +59,72 @@ final class FinecoXlsxParser
         'var_euro' => true,
     ];
 
-    public function parse(string $xlsxPath): array
+    public function parse(string $spreadsheetPath): array
     {
         if (class_exists(IOFactory::class)) {
-            return $this->parseWithPhpSpreadsheet($xlsxPath);
+            return $this->parseWithPhpSpreadsheet($spreadsheetPath);
         }
 
-        return $this->parseWithSimpleReader($xlsxPath);
+        if (strtolower(pathinfo($spreadsheetPath, PATHINFO_EXTENSION)) !== 'xlsx') {
+            throw new RuntimeException('Per importare file .xls e\' necessario caricare la cartella vendor completa.');
+        }
+
+        return $this->parseWithSimpleReader($spreadsheetPath);
     }
 
-    private function parseWithPhpSpreadsheet(string $xlsxPath): array
+    private function parseWithPhpSpreadsheet(string $spreadsheetPath): array
     {
-        $spreadsheet = IOFactory::load($xlsxPath);
-        $sheet = $spreadsheet->getActiveSheet();
-        $detection = $this->detectHeaderRowInSheet($sheet);
-
-        if ($detection === null) {
-            throw new RuntimeException('Intestazioni Fineco non trovate nel file.');
+        $readerType = IOFactory::identify($spreadsheetPath);
+        if (!in_array($readerType, ['Xls', 'Xlsx'], true)) {
+            throw new RuntimeException('Formato Excel non supportato. Usa un export Fineco .xls o .xlsx.');
         }
 
-        $positions = [];
-        $maxRow = $sheet->getHighestDataRow();
-        $emptyStreak = 0;
+        $reader = IOFactory::createReader($readerType);
+        $reader->setReadDataOnly(true);
+        $spreadsheet = $reader->load($spreadsheetPath);
 
-        for ($row = $detection['row'] + 1; $row <= $maxRow; $row++) {
-            $record = [];
-            foreach ($detection['headers'] as $field => $column) {
-                $cell = $sheet->getCell([$column, $row]);
-                $record[$field] = isset(self::NUMERIC_FIELDS[$field])
-                    ? $cell->getCalculatedValue()
-                    : trim((string) $cell->getFormattedValue());
+        try {
+            $sheet = $spreadsheet->getActiveSheet();
+            $detection = $this->detectHeaderRowInSheet($sheet);
+
+            if ($detection === null) {
+                throw new RuntimeException('Intestazioni Fineco non trovate nel file.');
             }
 
-            $position = $this->positionFromRecord($record);
-            if ($position === null) {
-                $emptyStreak++;
-                if ($emptyStreak >= 20) {
-                    break;
-                }
-                continue;
-            }
-
+            $positions = [];
+            $maxRow = $sheet->getHighestDataRow();
             $emptyStreak = 0;
-            $positions[] = $position;
-        }
 
-        if ($positions === []) {
-            throw new RuntimeException('Nessuna posizione valida trovata nel file caricato.');
-        }
+            for ($row = $detection['row'] + 1; $row <= $maxRow; $row++) {
+                $record = [];
+                foreach ($detection['headers'] as $field => $column) {
+                    $cell = $sheet->getCell([$column, $row]);
+                    $record[$field] = isset(self::NUMERIC_FIELDS[$field])
+                        ? $cell->getCalculatedValue()
+                        : trim((string) $cell->getFormattedValue());
+                }
 
-        return $positions;
+                $position = $this->positionFromRecord($record);
+                if ($position === null) {
+                    $emptyStreak++;
+                    if ($emptyStreak >= 20) {
+                        break;
+                    }
+                    continue;
+                }
+
+                $emptyStreak = 0;
+                $positions[] = $position;
+            }
+
+            if ($positions === []) {
+                throw new RuntimeException('Nessuna posizione valida trovata nel file caricato.');
+            }
+
+            return $positions;
+        } finally {
+            $spreadsheet->disconnectWorksheets();
+        }
     }
 
     private function detectHeaderRowInSheet(Worksheet $sheet): ?array
@@ -242,6 +259,17 @@ final class FinecoXlsxParser
             return null;
         }
 
+        foreach ([
+            'quantita' => 'quantita',
+            'valore_di_carico' => 'valore di carico',
+            'valore_di_mercato_euro' => 'valore di mercato',
+            'var_euro' => 'P/L',
+        ] as $field => $label) {
+            if (!$this->isNumericValue($record[$field] ?? null)) {
+                throw new RuntimeException('Valore ' . $label . ' non valido per il titolo ' . $title . '.');
+            }
+        }
+
         $ticker = trim((string) ($record['simbolo'] ?? ''));
         if ($ticker === '' || $ticker === '-') {
             $ticker = null;
@@ -261,6 +289,11 @@ final class FinecoXlsxParser
             unrealizedPnl: parse_decimal($record['var_euro'] ?? null),
             varPct: parse_percentage_to_decimal($record['var_pct'] ?? null)
         );
+    }
+
+    private function isNumericValue(mixed $value): bool
+    {
+        return parse_decimal_nullable($value) !== null;
     }
 
     private function isTotalOrSummaryRow(string $title, string $isin, array $record): bool
@@ -292,6 +325,7 @@ final class FinecoXlsxParser
         $header = str_replace(["\u{00A0}", '%', '€'], [' ', ' percentuale ', ' eur '], $header);
         $header = str_replace(['p.zo', 'pzo', 'prezzo'], ['prezzo', 'prezzo', 'prezzo'], $header);
         $header = normalize_ascii($header);
+        $header = str_replace(["'", '`'], '', $header);
         $header = preg_replace('/[^a-z0-9]+/', ' ', $header) ?? '';
         $header = preg_replace('/\s+/', ' ', $header) ?? '';
         $header = trim($header);
@@ -300,5 +334,27 @@ final class FinecoXlsxParser
             'var percentuale' => 'var',
             default => $header,
         };
+    }
+}
+
+function convert_fineco_spreadsheet_to_xlsx(string $sourcePath, string $destinationPath): void
+{
+    if (!class_exists(IOFactory::class) || !class_exists(\PhpOffice\PhpSpreadsheet\Writer\Xlsx::class)) {
+        throw new RuntimeException('Conversione Excel non disponibile. Carica la cartella vendor completa.');
+    }
+
+    $readerType = IOFactory::identify($sourcePath);
+    if (!in_array($readerType, ['Xls', 'Xlsx'], true)) {
+        throw new RuntimeException('Formato Excel non supportato.');
+    }
+
+    $reader = IOFactory::createReader($readerType);
+    $spreadsheet = $reader->load($sourcePath);
+
+    try {
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save($destinationPath);
+    } finally {
+        $spreadsheet->disconnectWorksheets();
     }
 }
