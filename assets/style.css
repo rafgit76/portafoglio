@@ -1201,6 +1201,46 @@ tbody tr.snapshot-row-min:hover {
     margin: 0.25rem 0;
 }
 
+.ai-report-table-wrap {
+    margin: 0.55rem 0 1rem;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.ai-report-table {
+    width: 100%;
+    min-width: 620px;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+.ai-report-table th,
+.ai-report-table td {
+    padding: 0.58rem 0.72rem;
+    border-bottom: 1px solid var(--line);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.ai-report-table th:first-child,
+.ai-report-table td:first-child {
+    text-align: left;
+    white-space: normal;
+}
+
+.ai-report-table th {
+    color: var(--muted);
+    background: var(--surface-soft);
+    font-size: 0.76rem;
+    text-transform: uppercase;
+}
+
+.ai-report-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
 .ai-report-actions {
     display: flex;
     gap: 0.55rem;
@@ -1280,6 +1320,94 @@ tbody tr.snapshot-row-min:hover {
 
 .ai-service-cards .tiny-note {
     margin: 0.35rem 0 0;
+}
+
+.ai-changes-panel {
+    scroll-margin-top: 1rem;
+}
+
+.ai-changes-panel h2 {
+    margin: 0.22rem 0 0.35rem;
+}
+
+.ai-changes-panel .panel-head p {
+    margin: 0;
+    color: var(--muted);
+}
+
+.ai-change-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-top: 1rem;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-soft);
+}
+
+.ai-change-metrics > div {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+    padding: 0.8rem 0.9rem;
+    border-right: 1px solid var(--line);
+}
+
+.ai-change-metrics > div:last-child {
+    border-right: 0;
+}
+
+.ai-change-metrics span {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.ai-change-metrics strong {
+    overflow-wrap: anywhere;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 1.05rem;
+}
+
+.ai-changes-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 1.25rem;
+    margin-top: 1rem;
+}
+
+.ai-changes-body h3 {
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+}
+
+.ai-change-list {
+    display: grid;
+    gap: 0.35rem;
+    max-width: 720px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ai-change-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--line);
+}
+
+.ai-change-list li span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.ai-change-list li strong {
+    flex: 0 0 auto;
+    font-family: "JetBrains Mono", monospace;
 }
 
 .ai-generator-grid {
@@ -1450,6 +1578,12 @@ tbody tr.snapshot-row-min:hover {
     background: #eef3fc;
 }
 
+.ai-type-changes {
+    color: #00636a;
+    border-color: #a7d7da;
+    background: #ebf8f8;
+}
+
 .ai-open-link {
     color: #2358b8;
     font-weight: 700;
@@ -1459,6 +1593,10 @@ tbody tr.snapshot-row-min:hover {
     border: 1px solid var(--line);
     border-radius: 8px;
     background: var(--surface-soft);
+}
+
+.ai-prompt-details + .ai-prompt-details {
+    margin-top: 0.7rem;
 }
 
 .ai-prompt-details summary {
@@ -1675,6 +1813,23 @@ tbody tr.snapshot-row-min:hover {
         grid-template-columns: 1fr;
     }
 
+    .ai-change-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ai-change-metrics > div:nth-child(2) {
+        border-right: 0;
+    }
+
+    .ai-change-metrics > div:nth-child(-n + 2) {
+        border-bottom: 1px solid var(--line);
+    }
+
+    .ai-changes-body {
+        grid-template-columns: 1fr;
+        align-items: start;
+    }
+
     .ai-hub-hero .panel-head,
     .ai-report-view-head .panel-head {
         align-items: flex-start;
@@ -1805,6 +1960,23 @@ tbody tr.snapshot-row-min:hover {
     .ai-report-panel li {
         break-inside: avoid;
         page-break-inside: avoid;
+    }
+
+    .ai-report-table-wrap {
+        overflow: visible;
+        border-color: #d1d5db;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .ai-report-table {
+        min-width: 0;
+        font-size: 9pt;
+    }
+
+    .ai-report-table th,
+    .ai-report-table td {
+        padding: 0.35rem 0.45rem;
     }
 
     .ai-report-view-head {

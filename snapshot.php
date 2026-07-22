@@ -34,7 +34,10 @@ include __DIR__ . '/partials/header.php';
 <section class="panel">
     <div class="panel-head">
         <h2>Snapshot <?= e($snapshot['snapshot_date']) ?></h2>
-        <a class="btn" href="<?= e(app_base_path()) ?>/snapshots.php">Torna allo storico</a>
+        <div class="actions-inline">
+            <a class="btn btn-secondary" href="<?= e(app_base_path()) ?>/ai_report.php#ai-changes">Cosa e cambiato?</a>
+            <a class="btn" href="<?= e(app_base_path()) ?>/snapshots.php">Torna allo storico</a>
+        </div>
     </div>
 
     <div class="cards">

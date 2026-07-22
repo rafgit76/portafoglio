@@ -132,6 +132,20 @@ function ai_report_archive_stats(array $reports): array
     return $stats;
 }
 
+function ai_report_type_label(string $type, bool $compact = false): string
+{
+    return match ($type) {
+        'custom' => $compact ? 'Personalizzato' : 'Report personalizzato',
+        'changes' => 'Cosa e cambiato?',
+        default => $compact ? 'Complessivo' : 'Report complessivo',
+    };
+}
+
+function ai_report_type_class(string $type): string
+{
+    return in_array($type, ['general', 'custom', 'changes'], true) ? $type : 'general';
+}
+
 function ai_report_archive_generated(
     array $generated,
     array $built,
@@ -141,6 +155,7 @@ function ai_report_archive_generated(
 ): array {
     $payload = is_array($built['payload'] ?? null) ? $built['payload'] : [];
     $dateRange = is_array($payload['date_range'] ?? null) ? $payload['date_range'] : [];
+    $normalizedType = ai_report_type_class($type);
     $estimatedCost = ai_report_estimate_cost_usd(
         (string) ($generated['model'] ?? ''),
         (int) ($generated['prompt_tokens'] ?? 0),
@@ -149,9 +164,9 @@ function ai_report_archive_generated(
     );
 
     return ai_report_archive_save([
-        'type' => $type === 'custom' ? 'custom' : 'general',
+        'type' => $normalizedType,
         'title' => $title,
-        'custom_prompt' => $type === 'custom' ? $customPrompt : '',
+        'custom_prompt' => $normalizedType === 'custom' ? $customPrompt : '',
         'data_hash' => (string) ($built['hash'] ?? ''),
         'snapshot_count' => (int) ($payload['snapshots_count'] ?? 0),
         'date_from' => (string) ($dateRange['from'] ?? ''),
@@ -217,7 +232,7 @@ function ai_report_import_legacy_cache(): ?array
 
 function ai_report_prompt_version(): string
 {
-    return '2026-07-22-gemini-3-5-medium-verified-v6';
+    return '2026-07-22-gemini-3-5-medium-verified-v10';
 }
 
 function ai_report_build_payload(PDO $pdo): array
@@ -276,6 +291,105 @@ function ai_report_build_payload(PDO $pdo): array
             'max_unrealized_pnl' => $extremes['max_unrealized_pnl'],
         ],
         'latest_allocation' => $allocation,
+        'latest_positions' => ai_report_normalize_positions($latestPositions),
+        'first_to_latest_position_changes' => $positionChanges,
+    ];
+
+    return [
+        'hash' => sha1(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+        'payload' => $payload,
+    ];
+}
+
+function ai_report_build_changes_payload(PDO $pdo): array
+{
+    $snapshots = $pdo->query(
+        'SELECT id, snapshot_date, total_market_value, total_cost_basis, total_unrealized_pnl, created_at
+         FROM pf_snapshots
+         ORDER BY snapshot_date DESC, id DESC
+         LIMIT 2'
+    )->fetchAll();
+
+    if (count($snapshots) < 2) {
+        throw new RuntimeException('Servono almeno 2 snapshot per analizzare cosa e cambiato.');
+    }
+
+    $latestSnapshot = $snapshots[0];
+    $previousSnapshot = $snapshots[1];
+    $previousSnapshotId = (int) $previousSnapshot['id'];
+    $latestSnapshotId = (int) $latestSnapshot['id'];
+
+    $latestPositionsStmt = $pdo->prepare(
+        'SELECT a.name, a.isin, a.ticker, a.asset_type, a.currency,
+                p.quantity, p.cost_basis, p.market_value, p.unrealized_pnl, p.weight_pct
+         FROM pf_snapshot_positions p
+         JOIN pf_assets a ON a.id = p.asset_id
+         WHERE p.snapshot_id = :snapshot_id
+         ORDER BY p.market_value DESC'
+    );
+    $latestPositionsStmt->execute([':snapshot_id' => $latestSnapshotId]);
+    $latestPositions = $latestPositionsStmt->fetchAll();
+
+    $positionChanges = ai_report_position_changes($pdo, $previousSnapshotId, $latestSnapshotId, 0);
+    $series = ai_report_series([$previousSnapshot, $latestSnapshot]);
+    $extremes = ai_report_extremes($series);
+    $changeSummary = [
+        'positions_total' => count($positionChanges),
+        'positions_up' => 0,
+        'positions_down' => 0,
+        'positions_unchanged' => 0,
+        'positions_added' => 0,
+        'positions_removed' => 0,
+        'quantity_changed' => 0,
+    ];
+
+    foreach ($positionChanges as $change) {
+        $deltaMarket = (float) ($change['delta_market_value'] ?? 0);
+        if ($deltaMarket > 0.005) {
+            $changeSummary['positions_up']++;
+        } elseif ($deltaMarket < -0.005) {
+            $changeSummary['positions_down']++;
+        } else {
+            $changeSummary['positions_unchanged']++;
+        }
+
+        if (($change['status'] ?? '') === 'added') {
+            $changeSummary['positions_added']++;
+        } elseif (($change['status'] ?? '') === 'removed') {
+            $changeSummary['positions_removed']++;
+        }
+
+        if (abs((float) ($change['delta_quantity'] ?? 0)) > 0.000001) {
+            $changeSummary['quantity_changed']++;
+        }
+    }
+
+    $payload = [
+        'snapshots_count' => 2,
+        'date_range' => [
+            'from' => (string) $previousSnapshot['snapshot_date'],
+            'to' => (string) $latestSnapshot['snapshot_date'],
+        ],
+        'series' => $series,
+        'range_summary' => [
+            'first_snapshot_date' => (string) $previousSnapshot['snapshot_date'],
+            'latest_snapshot_date' => (string) $latestSnapshot['snapshot_date'],
+            'first_market_value' => round((float) $previousSnapshot['total_market_value'], 2),
+            'latest_market_value' => round((float) $latestSnapshot['total_market_value'], 2),
+            'first_cost_basis' => round((float) $previousSnapshot['total_cost_basis'], 2),
+            'latest_cost_basis' => round((float) $latestSnapshot['total_cost_basis'], 2),
+            'first_unrealized_pnl' => round((float) $previousSnapshot['total_unrealized_pnl'], 2),
+            'latest_unrealized_pnl' => round((float) $latestSnapshot['total_unrealized_pnl'], 2),
+            'delta_market_value' => round((float) $latestSnapshot['total_market_value'] - (float) $previousSnapshot['total_market_value'], 2),
+            'delta_cost_basis' => round((float) $latestSnapshot['total_cost_basis'] - (float) $previousSnapshot['total_cost_basis'], 2),
+            'delta_unrealized_pnl' => round((float) $latestSnapshot['total_unrealized_pnl'] - (float) $previousSnapshot['total_unrealized_pnl'], 2),
+            'min_market_value' => $extremes['min_market_value'],
+            'max_market_value' => $extremes['max_market_value'],
+            'min_unrealized_pnl' => $extremes['min_unrealized_pnl'],
+            'max_unrealized_pnl' => $extremes['max_unrealized_pnl'],
+        ],
+        'change_summary' => $changeSummary,
+        'latest_allocation' => ai_report_allocation($latestPositions),
         'latest_positions' => ai_report_normalize_positions($latestPositions),
         'first_to_latest_position_changes' => $positionChanges,
     ];
@@ -390,10 +504,18 @@ function ai_report_normalize_positions(array $positions): array
     }, $positions);
 }
 
-function ai_report_position_changes(PDO $pdo, int $firstSnapshotId, int $latestSnapshotId): array
+function ai_report_position_changes(PDO $pdo, int $firstSnapshotId, int $latestSnapshotId, int $limit = 12): array
 {
     $stmt = $pdo->prepare(
         'SELECT a.name, a.isin, a.ticker, a.asset_type,
+                CASE WHEN p_first.asset_id IS NULL THEN 0 ELSE 1 END AS present_first,
+                CASE WHEN p_latest.asset_id IS NULL THEN 0 ELSE 1 END AS present_latest,
+                COALESCE(p_first.quantity, 0) AS first_quantity,
+                COALESCE(p_latest.quantity, 0) AS latest_quantity,
+                COALESCE(p_first.current_price, 0) AS first_price,
+                COALESCE(p_latest.current_price, 0) AS latest_price,
+                COALESCE(p_first.cost_basis, 0) AS first_cost_basis,
+                COALESCE(p_latest.cost_basis, 0) AS latest_cost_basis,
                 COALESCE(p_first.market_value, 0) AS first_market_value,
                 COALESCE(p_latest.market_value, 0) AS latest_market_value,
                 COALESCE(p_first.unrealized_pnl, 0) AS first_pnl,
@@ -418,11 +540,24 @@ function ai_report_position_changes(PDO $pdo, int $firstSnapshotId, int $latestS
 
     $changes = [];
     foreach ($stmt->fetchAll() as $row) {
+        $presentFirst = (int) $row['present_first'] === 1;
+        $presentLatest = (int) $row['present_latest'] === 1;
+        $status = !$presentFirst ? 'added' : (!$presentLatest ? 'removed' : 'retained');
         $changes[] = [
             'name' => (string) $row['name'],
             'isin' => (string) ($row['isin'] ?? ''),
             'ticker' => (string) ($row['ticker'] ?? ''),
             'asset_type' => (string) $row['asset_type'],
+            'status' => $status,
+            'first_quantity' => round((float) $row['first_quantity'], 6),
+            'latest_quantity' => round((float) $row['latest_quantity'], 6),
+            'delta_quantity' => round((float) $row['latest_quantity'] - (float) $row['first_quantity'], 6),
+            'first_price' => round((float) $row['first_price'], 4),
+            'latest_price' => round((float) $row['latest_price'], 4),
+            'delta_price' => round((float) $row['latest_price'] - (float) $row['first_price'], 4),
+            'first_cost_basis' => round((float) $row['first_cost_basis'], 2),
+            'latest_cost_basis' => round((float) $row['latest_cost_basis'], 2),
+            'delta_cost_basis' => round((float) $row['latest_cost_basis'] - (float) $row['first_cost_basis'], 2),
             'first_market_value' => round((float) $row['first_market_value'], 2),
             'latest_market_value' => round((float) $row['latest_market_value'], 2),
             'delta_market_value' => round((float) $row['latest_market_value'] - (float) $row['first_market_value'], 2),
@@ -437,7 +572,7 @@ function ai_report_position_changes(PDO $pdo, int $firstSnapshotId, int $latestS
 
     usort($changes, static fn(array $a, array $b): int => abs($b['delta_market_value']) <=> abs($a['delta_market_value']));
 
-    return array_slice($changes, 0, 12);
+    return $limit > 0 ? array_slice($changes, 0, $limit) : $changes;
 }
 
 function ai_report_generate_with_gemini(array $historyPayload): array
@@ -463,6 +598,20 @@ function ai_report_generate_custom_with_gemini(array $historyPayload, string $cu
         ai_report_custom_system_instruction(),
         ai_report_build_custom_prompt($payloadJson, $customPrompt, $verifiedFacts),
         'custom',
+        $historyPayload,
+        $verifiedFacts
+    );
+}
+
+function ai_report_generate_changes_with_gemini(array $historyPayload): array
+{
+    $payloadJson = ai_report_encode_payload($historyPayload);
+    $verifiedFacts = ai_report_build_changes_verified_facts($historyPayload);
+
+    return ai_report_generate_request(
+        ai_report_changes_system_instruction(),
+        ai_report_build_changes_prompt($payloadJson, $verifiedFacts),
+        'changes',
         $historyPayload,
         $verifiedFacts
     );
@@ -569,11 +718,16 @@ function ai_report_validate_response(string $text, string $finishReason, string 
 {
     if ($reportType === 'custom') {
         ai_report_validate_custom_text($text, $finishReason);
+    } elseif ($reportType === 'changes') {
+        ai_report_validate_changes_text($text, $finishReason, $historyPayload);
     } else {
         ai_report_validate_generated_text($text, $finishReason, $historyPayload);
     }
 
-    ai_report_validate_numeric_tokens($text, ai_report_build_verified_facts($historyPayload));
+    $verifiedFacts = $reportType === 'changes'
+        ? ai_report_build_changes_verified_facts($historyPayload)
+        : ai_report_build_verified_facts($historyPayload);
+    ai_report_validate_numeric_tokens($text, $verifiedFacts);
 }
 
 function ai_report_sum_usage(array $responses): array
@@ -689,6 +843,166 @@ function ai_report_build_verified_facts(array $historyPayload): string
     }
 
     return implode("\n", $lines);
+}
+
+function ai_report_build_changes_verified_facts(array $historyPayload): string
+{
+    $range = is_array($historyPayload['range_summary'] ?? null) ? $historyPayload['range_summary'] : [];
+    $dateRange = is_array($historyPayload['date_range'] ?? null) ? $historyPayload['date_range'] : [];
+    $summary = is_array($historyPayload['change_summary'] ?? null) ? $historyPayload['change_summary'] : [];
+    $lines = [
+        'FATTI VERIFICATI DAL CODICE PHP - COPIARE ESATTAMENTE LE CIFRE',
+        '- Snapshot confrontati: 2',
+        '- Snapshot precedente: ' . ai_report_format_date_it((string) ($dateRange['from'] ?? '')),
+        '- Snapshot piu recente: ' . ai_report_format_date_it((string) ($dateRange['to'] ?? '')),
+        '- Valore di mercato precedente: EUR ' . ai_report_format_number_it((float) ($range['first_market_value'] ?? 0)),
+        '- Valore di mercato piu recente: EUR ' . ai_report_format_number_it((float) ($range['latest_market_value'] ?? 0)),
+        '- Delta valore di mercato: EUR ' . ai_report_format_number_it((float) ($range['delta_market_value'] ?? 0), 2, true),
+        '- Valore di carico precedente: EUR ' . ai_report_format_number_it((float) ($range['first_cost_basis'] ?? 0)),
+        '- Valore di carico piu recente: EUR ' . ai_report_format_number_it((float) ($range['latest_cost_basis'] ?? 0)),
+        '- Delta valore di carico: EUR ' . ai_report_format_number_it((float) ($range['delta_cost_basis'] ?? 0), 2, true),
+        '- P/L non realizzato precedente: EUR ' . ai_report_format_number_it((float) ($range['first_unrealized_pnl'] ?? 0)),
+        '- P/L non realizzato piu recente: EUR ' . ai_report_format_number_it((float) ($range['latest_unrealized_pnl'] ?? 0)),
+        '- Delta P/L non realizzato: EUR ' . ai_report_format_number_it((float) ($range['delta_unrealized_pnl'] ?? 0), 2, true),
+        '- Posizioni confrontate: ' . (int) ($summary['positions_total'] ?? 0),
+        '- Posizioni con controvalore aumentato: ' . (int) ($summary['positions_up'] ?? 0),
+        '- Posizioni con controvalore diminuito: ' . (int) ($summary['positions_down'] ?? 0),
+        '- Posizioni con controvalore invariato: ' . (int) ($summary['positions_unchanged'] ?? 0),
+        '- Posizioni nuove: ' . (int) ($summary['positions_added'] ?? 0),
+        '- Posizioni non piu presenti: ' . (int) ($summary['positions_removed'] ?? 0),
+        '- Posizioni con quantita variata: ' . (int) ($summary['quantity_changed'] ?? 0),
+        '',
+        'VARIAZIONI PER STRUMENTO VERIFICATE',
+    ];
+
+    $statusLabels = [
+        'added' => 'nuova nello snapshot piu recente',
+        'removed' => 'non piu presente nello snapshot piu recente',
+        'retained' => 'presente in entrambi gli snapshot',
+    ];
+
+    foreach (($historyPayload['first_to_latest_position_changes'] ?? []) as $position) {
+        if (!is_array($position)) {
+            continue;
+        }
+
+        $identity = (string) ($position['name'] ?? 'Strumento');
+        $ticker = trim((string) ($position['ticker'] ?? ''));
+        if ($ticker !== '') {
+            $identity .= ' (' . $ticker . ')';
+        }
+        $status = (string) ($position['status'] ?? 'retained');
+
+        $lines[] = '- ' . $identity . ' [' . ($statusLabels[$status] ?? $statusLabels['retained']) . ']'
+            . ': quantita ' . ai_report_format_number_it((float) ($position['first_quantity'] ?? 0))
+            . ' -> ' . ai_report_format_number_it((float) ($position['latest_quantity'] ?? 0))
+            . ', delta ' . ai_report_format_number_it((float) ($position['delta_quantity'] ?? 0), 2, true)
+            . '; prezzo ' . ai_report_format_number_it((float) ($position['first_price'] ?? 0), 4)
+            . ' -> ' . ai_report_format_number_it((float) ($position['latest_price'] ?? 0), 4)
+            . ', delta ' . ai_report_format_number_it((float) ($position['delta_price'] ?? 0), 4, true)
+            . '; carico EUR ' . ai_report_format_number_it((float) ($position['first_cost_basis'] ?? 0))
+            . ' -> EUR ' . ai_report_format_number_it((float) ($position['latest_cost_basis'] ?? 0))
+            . ', delta EUR ' . ai_report_format_number_it((float) ($position['delta_cost_basis'] ?? 0), 2, true)
+            . '; valore EUR ' . ai_report_format_number_it((float) ($position['first_market_value'] ?? 0))
+            . ' -> EUR ' . ai_report_format_number_it((float) ($position['latest_market_value'] ?? 0))
+            . ', delta EUR ' . ai_report_format_number_it((float) ($position['delta_market_value'] ?? 0), 2, true)
+            . '; P/L EUR ' . ai_report_format_number_it((float) ($position['first_pnl'] ?? 0))
+            . ' -> EUR ' . ai_report_format_number_it((float) ($position['latest_pnl'] ?? 0))
+            . ', delta EUR ' . ai_report_format_number_it((float) ($position['delta_pnl'] ?? 0), 2, true)
+            . '; peso ' . ai_report_format_number_it((float) ($position['first_weight_pct'] ?? 0)) . '%'
+            . ' -> ' . ai_report_format_number_it((float) ($position['latest_weight_pct'] ?? 0)) . '%'
+            . ', delta ' . ai_report_format_number_it((float) ($position['delta_weight_pct'] ?? 0), 2, true)
+            . ' punti percentuali.';
+    }
+
+    return implode("\n", $lines);
+}
+
+function ai_report_changes_system_instruction(): string
+{
+    return <<<PROMPT
+Sei un redattore di confronti descrittivi tra due snapshot consecutivi di un portafoglio. Devi spiegare cosa e cambiato in modo chiaro, accurato e prudente. Non sei un consulente finanziario e non devi suggerire acquisti, vendite o strategie.
+
+FONTI E NUMERI
+- Il blocco FATTI VERIFICATI DAL CODICE PHP e l'unica fonte autorizzata per cifre, date, importi, percentuali e variazioni.
+- Copia ogni cifra esattamente come fornita. Non calcolare, arrotondare, sommare o correggere alcun valore.
+- Il JSON serve soltanto come contesto strutturale. Non ricavare nuove cifre dal JSON.
+- Il P/L non realizzato e importato da Fineco e non deve essere ricostruito come differenza tra valore di mercato e valore di carico.
+- Il delta peso e espresso in punti percentuali. Non chiamarlo rendimento.
+- Una variazione di controvalore non dimostra da sola un guadagno, una perdita, un acquisto o una vendita.
+- Se cambia la quantita, descrivi soltanto la variazione osservata senza attribuirle una causa o il tipo di operazione.
+- Se cambia il valore di carico, descrivi il dato registrato senza dedurre versamenti, acquisti o disinvestimenti.
+- Se il valore di carico e la quantita restano invariati, non dedurre l'assenza di operazioni, modifiche al capitale o altri eventi: dichiara soltanto che i valori registrati non sono cambiati.
+- Non affermare che il P/L o il controvalore riflettano, derivino o dipendano dalle dinamiche di prezzo: descrivi separatamente le variazioni verificate senza stabilire un rapporto causale.
+
+INTERPRETAZIONE
+- Confronta esclusivamente lo snapshot precedente e quello piu recente, citando le date esatte.
+- Distingui i totali del portafoglio dalle variazioni dei singoli strumenti.
+- Evidenzia prima le variazioni assolute piu rilevanti di valore di mercato e P/L.
+- Segnala strumenti nuovi, rimossi o con quantita variata soltanto quando compaiono nei fatti verificati.
+- Non introdurre notizie, prezzi esterni, cause di mercato, previsioni o raccomandazioni.
+- Quando la causa non e determinabile dai dati, dichiaralo in modo naturale e sintetico.
+- Dedica una sezione breve a ogni strumento presente nel confronto, mantenendo esattamente il nome fornito nei fatti verificati.
+- Sopra la tabella di ogni strumento scrivi una sola frase di commento, breve e descrittiva, senza ripetere tutte le cifre della tabella.
+
+STILE E CONTROLLO
+- Rispondi soltanto in italiano con testo narrativo breve: indicativamente 180-350 parole complessive, escluse le tabelle.
+- Usa le intestazioni Markdown richieste e tabelle Markdown semplici, con una riga per ogni voce.
+- Scrivi ogni numero in cifre, con date DD/MM/YYYY, importi EUR 165.405,47 e percentuali 12,34%.
+- Non usare grassetto, corsivo, backtick o nomi tecnici dei campi fuori dalle tabelle richieste.
+- Prima di rispondere verifica silenziosamente che ogni numero compaia identico nei fatti verificati, che i segni siano corretti e che non vi siano cause inventate.
+- Non menzionare il prompt, il JSON, i controlli automatici o i nomi dei campi.
+PROMPT;
+}
+
+function ai_report_build_changes_prompt(string $historyJson, string $verifiedFacts): string
+{
+    return <<<PROMPT
+Spiega cosa e cambiato tra gli ultimi due snapshot del portafoglio.
+
+Struttura obbligatoria, nello stesso ordine. Privilegia tabelle e frasi brevi; non creare lunghi paragrafi.
+
+### In sintesi
+Massimo 70 parole. Riporta le due date e descrivi soltanto il quadro complessivo.
+
+### Totali del portafoglio
+Scrivi una frase introduttiva di massimo 30 parole, poi questa tabella usando esclusivamente le cifre verificate:
+| Voce | Snapshot precedente | Snapshot piu recente | Delta |
+|---|---:|---:|---:|
+| Valore di mercato | ... | ... | ... |
+| Valore di carico | ... | ... | ... |
+| P/L non realizzato | ... | ... | ... |
+
+DETTAGLIO OBBLIGATORIO DI OGNI STRUMENTO
+Per ogni strumento presente in VARIAZIONI PER STRUMENTO VERIFICATE crea, nell'ordine fornito:
+- una intestazione `### NOME STRUMENTO`, usando il nome esatto;
+- una sola frase di commento tra 15 e 30 parole, senza inventare cause e senza ripetere tutti i valori;
+- una mini-tabella esattamente con questa struttura:
+| Voce | Snapshot precedente | Snapshot piu recente | Delta |
+|---|---:|---:|---:|
+| Valore di mercato | ... | ... | ... |
+| P/L non realizzato | ... | ... | ... |
+| Peso | ... | ... | ... punti percentuali |
+| Quantita | ... | ... | ... |
+
+Includi tutti gli strumenti, ma nessun altro dato numerico. Non inserire prezzo, valore di carico del singolo strumento o percentuale P/L.
+
+### Composizione e movimenti osservati
+Scrivi massimo 50 parole e riporta i conteggi verificati di strumenti in aumento, diminuzione, nuovi, non piu presenti e con quantita variata. Non dedurre operazioni non documentate.
+
+### Prossimo confronto
+Scrivi una sola frase neutra, senza numeri, previsioni, formule prescrittive o raccomandazioni finanziarie.
+
+FATTI VERIFICATI DAL CODICE PHP:
+```text
+{$verifiedFacts}
+```
+
+JSON dei soli due snapshot confrontati, utilizzabile soltanto come contesto strutturale:
+```json
+{$historyJson}
+```
+PROMPT;
 }
 
 function ai_report_system_instruction(): string
@@ -847,9 +1161,11 @@ function ai_report_build_repair_prompt(
     string $verifiedFacts,
     string $reportType
 ): string {
-    $scope = $reportType === 'custom'
-        ? 'Riscrivi integralmente la risposta alla richiesta personalizzata.'
-        : 'Riscrivi integralmente il report con tutte le sette sezioni e tra 1000 e 1400 parole.';
+    $scope = match ($reportType) {
+        'custom' => 'Riscrivi integralmente la risposta alla richiesta personalizzata.',
+        'changes' => 'Riscrivi integralmente il confronto in forma compatta, con tabella dei totali e una mini-tabella per ogni strumento.',
+        default => 'Riscrivi integralmente il report con tutte le sette sezioni e tra 1000 e 1400 parole.',
+    };
 
     return <<<PROMPT
 La prima bozza e stata rifiutata dai controlli automatici dell'app.
@@ -1070,6 +1386,92 @@ function ai_report_validate_generated_text(string $text, string $finishReason, a
     }
 }
 
+function ai_report_validate_changes_text(string $text, string $finishReason, array $historyPayload): void
+{
+    if ($finishReason === 'MAX_TOKENS') {
+        throw new RuntimeException('Gemini ha raggiunto il limite di token: il confronto incompleto non e stato archiviato.');
+    }
+
+    $requiredHeadings = [
+        '### In sintesi',
+        '### Totali del portafoglio',
+        '### Composizione e movimenti osservati',
+        '### Prossimo confronto',
+    ];
+    $missingHeadings = array_values(array_filter(
+        $requiredHeadings,
+        static fn(string $heading): bool => !str_contains($text, $heading)
+    ));
+    if ($missingHeadings !== []) {
+        throw new RuntimeException('Gemini ha restituito un confronto incompleto: mancano una o piu sezioni richieste.');
+    }
+
+    $proseLines = array_values(array_filter(
+        preg_split('/\R/u', trim($text)) ?: [],
+        static function (string $line): bool {
+            $trimmed = trim($line);
+            return $trimmed !== ''
+                && !str_starts_with($trimmed, '### ')
+                && !str_starts_with($trimmed, '|');
+        }
+    ));
+    $proseWords = preg_split('/\s+/u', trim(implode(' ', $proseLines))) ?: [];
+    if (count($proseWords) < 80) {
+        throw new RuntimeException('Gemini ha restituito un confronto troppo breve: il risultato non e stato archiviato.');
+    }
+    if (count($proseWords) > 500) {
+        throw new RuntimeException('Gemini ha restituito un confronto troppo narrativo: il risultato non e stato archiviato.');
+    }
+
+    $positionChanges = array_values(array_filter(
+        is_array($historyPayload['first_to_latest_position_changes'] ?? null)
+            ? $historyPayload['first_to_latest_position_changes']
+            : [],
+        'is_array'
+    ));
+    $missingAssets = [];
+    foreach ($positionChanges as $position) {
+        $name = trim((string) ($position['name'] ?? ''));
+        if ($name !== '' && !str_contains($text, '### ' . $name)) {
+            $missingAssets[] = $name;
+        }
+    }
+    if ($missingAssets !== []) {
+        throw new RuntimeException(
+            'Gemini non ha incluso la mini-tabella di uno o piu strumenti: '
+            . implode(', ', array_slice($missingAssets, 0, 3))
+        );
+    }
+
+    preg_match_all('/^\|\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?\s*$/m', $text, $tableSeparators);
+    $minimumTables = count($positionChanges) + 1;
+    if (count($tableSeparators[0] ?? []) < $minimumTables) {
+        throw new RuntimeException('Gemini non ha prodotto tutte le tabelle richieste per il confronto.');
+    }
+
+    ai_report_validate_numeric_style($text);
+
+    $range = is_array($historyPayload['range_summary'] ?? null) ? $historyPayload['range_summary'] : [];
+    $dateRange = is_array($historyPayload['date_range'] ?? null) ? $historyPayload['date_range'] : [];
+    $requiredFacts = [
+        ai_report_format_date_it((string) ($dateRange['from'] ?? '')),
+        ai_report_format_date_it((string) ($dateRange['to'] ?? '')),
+        'EUR ' . ai_report_format_number_it((float) ($range['delta_market_value'] ?? 0), 2, true),
+        'EUR ' . ai_report_format_number_it((float) ($range['delta_cost_basis'] ?? 0), 2, true),
+        'EUR ' . ai_report_format_number_it((float) ($range['delta_unrealized_pnl'] ?? 0), 2, true),
+    ];
+    $missingFacts = array_values(array_filter(
+        array_unique($requiredFacts),
+        static fn(string $fact): bool => $fact !== '' && !str_contains($text, $fact)
+    ));
+    if ($missingFacts !== []) {
+        throw new RuntimeException(
+            'Gemini non ha riportato correttamente uno o piu valori del confronto: '
+            . implode(', ', array_slice($missingFacts, 0, 3))
+        );
+    }
+}
+
 function ai_report_validate_custom_text(string $text, string $finishReason): void
 {
     if ($finishReason === 'MAX_TOKENS') {
@@ -1164,22 +1566,76 @@ function ai_report_render_markdown(string $markdown): string
     $lines = preg_split('/\R/', trim($markdown)) ?: [];
     $html = '';
     $inList = false;
+    $parseTableRow = static function (string $line): array {
+        $content = trim(trim($line), '|');
+        return array_map('trim', explode('|', $content));
+    };
+    $isTableSeparator = static function (string $line) use ($parseTableRow): bool {
+        $cells = $parseTableRow($line);
+        if (count($cells) < 2) {
+            return false;
+        }
 
-    foreach ($lines as $line) {
-        $trimmed = trim($line);
-        if ($trimmed === '') {
-            if ($inList) {
-                $html .= '</ul>';
-                $inList = false;
+        foreach ($cells as $cell) {
+            if (preg_match('/^:?-{3,}:?$/', $cell) !== 1) {
+                return false;
             }
+        }
+
+        return true;
+    };
+    $closeList = static function () use (&$html, &$inList): void {
+        if ($inList) {
+            $html .= '</ul>';
+            $inList = false;
+        }
+    };
+
+    $lineCount = count($lines);
+    for ($index = 0; $index < $lineCount; $index++) {
+        $trimmed = trim($lines[$index]);
+        if ($trimmed === '') {
+            $closeList();
+            continue;
+        }
+
+        $nextLine = $index + 1 < $lineCount ? trim($lines[$index + 1]) : '';
+        if (str_starts_with($trimmed, '|') && $isTableSeparator($nextLine)) {
+            $closeList();
+            $headers = $parseTableRow($trimmed);
+            $rowIndex = $index + 2;
+            $rows = [];
+            while ($rowIndex < $lineCount) {
+                $rowLine = trim($lines[$rowIndex]);
+                if ($rowLine === '' || !str_starts_with($rowLine, '|')) {
+                    break;
+                }
+
+                $cells = $parseTableRow($rowLine);
+                $cells = array_slice(array_pad($cells, count($headers), ''), 0, count($headers));
+                $rows[] = $cells;
+                $rowIndex++;
+            }
+
+            $html .= '<div class="ai-report-table-wrap"><table class="ai-report-table"><thead><tr>';
+            foreach ($headers as $header) {
+                $html .= '<th>' . e($header) . '</th>';
+            }
+            $html .= '</tr></thead><tbody>';
+            foreach ($rows as $row) {
+                $html .= '<tr>';
+                foreach ($row as $cell) {
+                    $html .= '<td>' . e($cell) . '</td>';
+                }
+                $html .= '</tr>';
+            }
+            $html .= '</tbody></table></div>';
+            $index = $rowIndex - 1;
             continue;
         }
 
         if (str_starts_with($trimmed, '### ')) {
-            if ($inList) {
-                $html .= '</ul>';
-                $inList = false;
-            }
+            $closeList();
             $html .= '<h3>' . e(substr($trimmed, 4)) . '</h3>';
             continue;
         }
@@ -1193,17 +1649,12 @@ function ai_report_render_markdown(string $markdown): string
             continue;
         }
 
-        if ($inList) {
-            $html .= '</ul>';
-            $inList = false;
-        }
+        $closeList();
 
         $html .= '<p>' . e($trimmed) . '</p>';
     }
 
-    if ($inList) {
-        $html .= '</ul>';
-    }
+    $closeList();
 
     return $html;
 }

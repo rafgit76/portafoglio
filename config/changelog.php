@@ -2,6 +2,23 @@
 
 return [
     [
+        'version' => '1.7.0',
+        'date' => '2026-07-22',
+        'title' => 'Cosa e cambiato?',
+        'changes' => [
+            'Aggiunto nel Centro AI il confronto guidato tra lo snapshot piu recente e quello immediatamente precedente.',
+            'Mostrata un\'anteprima gratuita dei delta di valore di mercato, valore di carico, P/L e strumenti in aumento o diminuzione.',
+            'Calcolate in PHP tutte le variazioni di portafoglio, prezzo, quantita, peso e singolo strumento prima della chiamata AI.',
+            'Aggiunto un prompt Gemini dedicato che usa soltanto i fatti verificati e non attribuisce cause o operazioni non documentate.',
+            'Riorganizzato il confronto con una tabella dei totali e una mini-tabella per ogni strumento, preceduta da un commento sintetico.',
+            'Corretto il controllo di lunghezza affinche valuti soltanto la parte narrativa e non conteggi le celle delle tabelle.',
+            'Rafforzato il divieto di dedurre operazioni o cause dai valori invariati.',
+            'Aggiunti controlli automatici su struttura, lunghezza, date, segni e valori numerici del confronto generato.',
+            'Archiviati i confronti con un tipo dedicato e reso consultabile il relativo prompt nel Centro AI.',
+            'Aggiunto il collegamento Cosa e cambiato? nella pagina di dettaglio dello snapshot.',
+        ],
+    ],
+    [
         'version' => '1.6.0',
         'date' => '2026-07-22',
         'title' => 'Home riservata e sblocco con PIN',

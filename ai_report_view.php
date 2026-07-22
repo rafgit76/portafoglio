@@ -36,11 +36,12 @@ if ($period !== '' && trim((string) ($report['date_to'] ?? '')) !== '') {
 }
 
 include __DIR__ . '/partials/header.php';
+$reportType = ai_report_type_class((string) ($report['type'] ?? 'general'));
 ?>
 <section class="panel ai-report-view-head">
     <div class="panel-head">
         <div>
-            <span class="ai-type-badge ai-type-<?= e((string) ($report['type'] ?? 'general')) ?>"><?= ($report['type'] ?? 'general') === 'custom' ? 'Report personalizzato' : 'Report complessivo' ?></span>
+            <span class="ai-type-badge ai-type-<?= e($reportType) ?>"><?= e(ai_report_type_label($reportType)) ?></span>
             <h2><?= e((string) ($report['title'] ?? 'Report AI')) ?></h2>
             <p class="tiny-note">Generato il <?= e($generatedLabel) ?> con <?= e((string) ($report['model'] ?? 'Gemini')) ?> in <?= max(1, (int) ($report['generation_attempts'] ?? 1)) ?> tentativo/i.</p>
         </div>
@@ -51,7 +52,7 @@ include __DIR__ . '/partials/header.php';
     </div>
 </section>
 
-<?php if (($report['type'] ?? 'general') === 'custom' && trim((string) ($report['custom_prompt'] ?? '')) !== ''): ?>
+<?php if ($reportType === 'custom' && trim((string) ($report['custom_prompt'] ?? '')) !== ''): ?>
     <section class="panel ai-request-panel">
         <h3>Richiesta utilizzata</h3>
         <p><?= nl2br(e((string) $report['custom_prompt'])) ?></p>

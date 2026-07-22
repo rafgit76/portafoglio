@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $action = (string) ($_POST['action'] ?? '');
-        if (!in_array($action, ['generate_general', 'generate_custom'], true)) {
+        if (!in_array($action, ['generate_general', 'generate_custom', 'generate_changes'], true)) {
             throw new RuntimeException('Azione AI non riconosciuta.');
         }
 
@@ -56,12 +56,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        $built = ai_report_build_payload(db());
+        $built = $action === 'generate_changes'
+            ? ai_report_build_changes_payload(db())
+            : ai_report_build_payload(db());
         if ($action === 'generate_custom') {
             $generated = ai_report_generate_custom_with_gemini($built['payload'], $customPrompt);
             $title = $customTitle !== '' ? $customTitle : 'Analisi personalizzata';
             $record = ai_report_archive_generated($generated, $built, 'custom', $title, $customPrompt);
             set_flash('success', 'Report personalizzato generato e archiviato.');
+        } elseif ($action === 'generate_changes') {
+            $generated = ai_report_generate_changes_with_gemini($built['payload']);
+            $dateTo = (string) ($built['payload']['date_range']['to'] ?? '');
+            $title = 'Cosa e cambiato?';
+            if ($dateTo !== '') {
+                $title .= ' - ' . ai_report_format_date_it($dateTo);
+            }
+            $record = ai_report_archive_generated($generated, $built, 'changes', $title);
+            set_flash('success', 'Confronto degli ultimi snapshot generato e archiviato.');
         } else {
             $generated = ai_report_generate_with_gemini($built['payload']);
             $record = ai_report_archive_generated($generated, $built, 'general', 'Report complessivo del portafoglio');
@@ -100,6 +111,27 @@ $promptTemplate = ai_report_build_prompt(
     '[DATI STORICI INSERITI AUTOMATICAMENTE DALL\'APP]',
     '[FATTI NUMERICI VERIFICATI E FORMATTATI AUTOMATICAMENTE DA PHP]'
 );
+$changesPromptTemplate = ai_report_build_changes_prompt(
+    '[DATI DEGLI ULTIMI DUE SNAPSHOT INSERITI AUTOMATICAMENTE DALL\'APP]',
+    '[FATTI DEL CONFRONTO CALCOLATI E FORMATTATI AUTOMATICAMENTE DA PHP]'
+);
+$changesBuilt = null;
+$changesUnavailable = null;
+try {
+    $changesBuilt = ai_report_build_changes_payload(db());
+} catch (Throwable $e) {
+    $changesUnavailable = $e->getMessage();
+}
+$changesPayload = is_array($changesBuilt['payload'] ?? null) ? $changesBuilt['payload'] : [];
+$changesRange = is_array($changesPayload['range_summary'] ?? null) ? $changesPayload['range_summary'] : [];
+$changesSummary = is_array($changesPayload['change_summary'] ?? null) ? $changesPayload['change_summary'] : [];
+$changesDateRange = is_array($changesPayload['date_range'] ?? null) ? $changesPayload['date_range'] : [];
+$changesPositions = is_array($changesPayload['first_to_latest_position_changes'] ?? null)
+    ? array_slice($changesPayload['first_to_latest_position_changes'], 0, 3)
+    : [];
+$formatSignedMoney = static function (float $value): string {
+    return 'EUR ' . ai_report_format_number_it($value, 2, true);
+};
 
 include __DIR__ . '/partials/header.php';
 ?>
@@ -160,6 +192,75 @@ include __DIR__ . '/partials/header.php';
         </div>
     </section>
 <?php endif; ?>
+
+<section class="panel ai-changes-panel" id="ai-changes">
+    <div class="panel-head">
+        <div>
+            <span class="ai-generator-kicker">Ultimo aggiornamento</span>
+            <h2>Cosa e cambiato?</h2>
+            <?php if ($changesBuilt !== null): ?>
+                <p>Confronta lo snapshot del <?= e(ai_report_format_date_it((string) ($changesDateRange['to'] ?? ''))) ?> con quello del <?= e(ai_report_format_date_it((string) ($changesDateRange['from'] ?? ''))) ?>.</p>
+            <?php else: ?>
+                <p>Confronta automaticamente gli ultimi due snapshot e spiega le variazioni piu importanti.</p>
+            <?php endif; ?>
+        </div>
+        <span class="ai-status <?= $changesBuilt !== null ? 'ai-status-ready' : 'ai-status-error' ?>">
+            <?= $changesBuilt !== null ? 'Confronto disponibile' : 'Dati insufficienti' ?>
+        </span>
+    </div>
+
+    <?php if ($changesBuilt === null): ?>
+        <div class="ai-empty-state">
+            <strong>Confronto non disponibile</strong>
+            <p><?= e($changesUnavailable ?? 'Servono almeno due snapshot.') ?></p>
+        </div>
+    <?php else: ?>
+        <div class="ai-change-metrics" aria-label="Anteprima variazioni ultimo snapshot">
+            <?php foreach ([
+                'Valore di mercato' => (float) ($changesRange['delta_market_value'] ?? 0),
+                'Valore di carico' => (float) ($changesRange['delta_cost_basis'] ?? 0),
+                'P/L non realizzato' => (float) ($changesRange['delta_unrealized_pnl'] ?? 0),
+            ] as $label => $value): ?>
+                <div>
+                    <span><?= e($label) ?></span>
+                    <strong class="<?= $value >= 0 ? 'pos' : 'neg' ?>"><?= e($formatSignedMoney($value)) ?></strong>
+                </div>
+            <?php endforeach; ?>
+            <div>
+                <span>Strumenti su / giu</span>
+                <strong><?= (int) ($changesSummary['positions_up'] ?? 0) ?> / <?= (int) ($changesSummary['positions_down'] ?? 0) ?></strong>
+            </div>
+        </div>
+
+        <div class="ai-changes-body">
+            <div>
+                <h3>Variazioni principali</h3>
+                <ul class="ai-change-list">
+                    <?php foreach ($changesPositions as $position): ?>
+                        <?php $delta = (float) ($position['delta_market_value'] ?? 0); ?>
+                        <li>
+                            <span><?= e((string) ($position['name'] ?? 'Strumento')) ?></span>
+                            <strong class="<?= $delta >= 0 ? 'pos' : 'neg' ?>"><?= e($formatSignedMoney($delta)) ?></strong>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+                <p class="tiny-note">Questa anteprima e calcolata da PHP e non consuma token.</p>
+            </div>
+            <form method="post" id="changes-report-form">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="generate_changes">
+                <details class="ai-inline-confirm">
+                    <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Spiegami cosa e cambiato</summary>
+                    <div class="ai-inline-confirm-body">
+                        <strong>Conferma generazione</strong>
+                        <p>Gemini ricevera soltanto gli ultimi due snapshot e i delta gia verificati da PHP. Il confronto verra salvato nell'archivio.</p>
+                        <button type="submit" name="confirmed" value="1" <?= !$apiConfigured ? 'disabled' : '' ?>>Conferma e analizza</button>
+                    </div>
+                </details>
+            </form>
+        </div>
+    <?php endif; ?>
+</section>
 
 <section class="ai-generator-grid">
     <article class="panel ai-generator-panel">
@@ -259,7 +360,8 @@ include __DIR__ . '/partials/header.php';
                     ?>
                     <tr>
                         <td class="mono-cell ai-archive-date"><?= e($generatedLabel) ?></td>
-                        <td><span class="ai-type-badge ai-type-<?= e((string) ($report['type'] ?? 'general')) ?>"><?= ($report['type'] ?? 'general') === 'custom' ? 'Personalizzato' : 'Complessivo' ?></span></td>
+                        <?php $reportType = ai_report_type_class((string) ($report['type'] ?? 'general')); ?>
+                        <td><span class="ai-type-badge ai-type-<?= e($reportType) ?>"><?= e(ai_report_type_label($reportType, true)) ?></span></td>
                         <td>
                             <strong><?= e((string) ($report['title'] ?? 'Report AI')) ?></strong>
                             <span class="ai-archive-model"><?= e((string) ($report['model'] ?? '')) ?></span>
@@ -292,6 +394,17 @@ include __DIR__ . '/partials/header.php';
         <div class="ai-prompt-block">
             <h3>Prompt del report complessivo</h3>
             <pre><?= e($promptTemplate) ?></pre>
+        </div>
+    </details>
+    <details class="ai-prompt-details">
+        <summary>Mostra il prompt Cosa e cambiato?</summary>
+        <div class="ai-prompt-block">
+            <h3>System instruction del confronto</h3>
+            <pre><?= e(ai_report_changes_system_instruction()) ?></pre>
+        </div>
+        <div class="ai-prompt-block">
+            <h3>Struttura del confronto</h3>
+            <pre><?= e($changesPromptTemplate) ?></pre>
         </div>
     </details>
 </section>
