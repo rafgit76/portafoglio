@@ -5,7 +5,7 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `1.4.0`
+- `1.5.4`
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto
@@ -61,7 +61,8 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - `compare.php`: confronto snapshot e export CSV
 - `assets.php`: anagrafica strumenti e composizione portafoglio
 - `asset.php`: dettaglio storico del singolo titolo
-- `ai_report.php`: report storico generato tramite Gemini
+- `ai_report.php`: Centro AI con generazione esplicita, report personalizzati e archivio
+- `ai_report_view.php`: dettaglio e stampa dei report AI archiviati
 - `changelog.php`: storico versioni applicative
 
 ### Bootstrap e librerie
@@ -158,6 +159,7 @@ Dipendenze esterne runtime:
 
 Cartelle con scrittura richiesta:
 - `storage/uploads`
+- `storage/ai_reports` per l'archivio privato dei report AI
 - `storage/` per cache news e FX
 
 ## Stato tecnico rilevato

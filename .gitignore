@@ -1,7 +1,8 @@
 /config/config.local.php
 /storage/*.json
+/storage/ai_reports/*
+!/storage/ai_reports/.gitkeep
 /storage/uploads/*
 !/storage/uploads/.gitkeep
 /vendor/
 /.phpunit.result.cache
-

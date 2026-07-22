@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `1.4.0`
+Versione corrente: `1.5.4`
 
 ## Deploy (FTP)
 
@@ -15,7 +15,7 @@ Carica tutto in:
 1. Esegui `composer install --no-dev --optimize-autoloader` in locale e carica anche `vendor/`.
 2. Importa `sql/schema.sql` nel tuo DB Aruba.
 3. Copia `config/config.local.sample.php` in `config/config.local.php` e inserisci le credenziali DB reali.
-4. Verifica permessi scrittura cartella `storage/uploads`.
+4. Verifica i permessi di scrittura delle cartelle `storage/uploads` e `storage/ai_reports`.
 5. Vai su `/apps/portafoglio/upload.php` e carica il primo file Fineco.
 
 Per creare una cartella FTP completa e pulita puoi eseguire:
@@ -54,15 +54,21 @@ In `config/config.local.php` puoi regolare:
 - `snapshot.php?id=...`: dettaglio snapshot
 - `assets.php`: anagrafica strumenti
 - `asset.php?id=...`: dettaglio storico di un singolo titolo
-- `ai_report.php`: report AI sullo storico snapshot
+- `ai_report.php`: Centro AI, generazione esplicita e archivio report
+- `ai_report_view.php`: dettaglio e stampa di un report AI archiviato
 - `changelog.php`: storico versioni applicative
 
 ## Report AI
 
-La pagina `Report AI` usa Gemini lato server per generare un report sullo storico degli snapshot.
+La pagina `Report AI` e un centro operativo che usa Gemini lato server per generare report sullo storico degli snapshot. La semplice apertura della pagina non esegue chiamate API: ogni generazione richiede un'azione e una conferma esplicite. Durante l'elaborazione viene mostrato un overlay con avanzamento stimato, stato finale ed eventuali errori.
 Configura la chiave solo in `config/config.local.php` o tramite `PORTFOLIO_GEMINI_API_KEY`.
-Il modello predefinito e' `gemini-3.1-flash-lite`, configurabile con `PORTFOLIO_GEMINI_MODEL`.
-Il report viene salvato in cache in `storage/ai_report_cache.json` e rigenerato quando cambiano gli snapshot o quando premi “Rigenera report”.
+Il modello predefinito e' `gemini-3.5-flash-lite`, configurabile con `PORTFOLIO_GEMINI_MODEL`.
+Il livello di ragionamento predefinito e' `medium`, configurabile con `PORTFOLIO_GEMINI_THINKING_LEVEL`.
+Il budget massimo predefinito e' di 20000 token, configurabile con `PORTFOLIO_GEMINI_MAX_OUTPUT_TOKENS`.
+La system instruction impone la semantica dei dati Fineco, il divieto di introdurre cause esterne e l'uso esclusivo di un blocco di fatti numerici verificati e formattati da PHP.
+I report troncati, fuori dai limiti di lunghezza, privi delle sezioni richieste o incoerenti con i principali valori verificati non vengono archiviati. Se la prima bozza non supera i controlli, l'app effettua al massimo un secondo tentativo correttivo e conteggia i token di entrambe le chiamate.
+Sono disponibili un report complessivo guidato dal prompt madre e report personalizzati basati su una richiesta libera. Ogni risultato mostra token utilizzati e costo API stimato secondo le tariffe configurate nel codice.
+I report vengono salvati come JSON protetti in `storage/ai_reports`, esclusi da Git e dai pacchetti FTP. Durante il deploy non eliminare questa cartella sul server se vuoi conservare lo storico. La vecchia cache `storage/ai_report_cache.json`, se presente, viene importata una sola volta nel nuovo archivio.
 
 ## Versioning
 

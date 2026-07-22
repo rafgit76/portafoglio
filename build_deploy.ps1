@@ -17,6 +17,7 @@ New-Item -ItemType Directory -Path $destination | Out-Null
 
 $excludeDirs = @(
     (Join-Path $projectRoot '.git'),
+    (Join-Path $projectRoot 'storage\ai_reports'),
     (Join-Path $projectRoot 'storage\uploads')
 )
 
@@ -51,5 +52,9 @@ if ($exitCode -ge 8) {
 $uploadsDir = Join-Path $destination 'storage\uploads'
 New-Item -ItemType Directory -Force -Path $uploadsDir | Out-Null
 New-Item -ItemType File -Force -Path (Join-Path $uploadsDir '.gitkeep') | Out-Null
+
+$aiReportsDir = Join-Path $destination 'storage\ai_reports'
+New-Item -ItemType Directory -Force -Path $aiReportsDir | Out-Null
+New-Item -ItemType File -Force -Path (Join-Path $aiReportsDir '.gitkeep') | Out-Null
 
 Write-Host "Cartella FTP pronta: $destination"
