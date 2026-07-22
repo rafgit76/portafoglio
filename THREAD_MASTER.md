@@ -5,7 +5,7 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `1.5.4`
+- `1.6.0`
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto
@@ -54,7 +54,8 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 
 ### Entrypoint principali
 
-- `index.php`: dashboard principale
+- `index.php`: home privacy senza dati economici e sblocco con PIN
+- `dashboard.php`: dashboard principale
 - `upload.php`: upload file Fineco e creazione snapshot
 - `snapshots.php`: storico snapshot con eliminazione
 - `snapshot.php`: dettaglio di un singolo snapshot
@@ -67,7 +68,7 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 
 ### Bootstrap e librerie
 
-- `bootstrap.php`: carica helper, DB e sessione
+- `bootstrap.php`: carica helper, DB e sessione e protegge centralmente le pagine operative
 - `lib/helpers.php`: config, escaping, redirect, flash, parsing numerico
 - `lib/db.php`: connessione PDO MySQL
 - `lib/fineco_importer.php`: import principale Fineco
@@ -160,6 +161,7 @@ Dipendenze esterne runtime:
 Cartelle con scrittura richiesta:
 - `storage/uploads`
 - `storage/ai_reports` per l'archivio privato dei report AI
+- `storage/` per il registro dei tentativi PIN
 - `storage/` per cache news e FX
 
 ## Stato tecnico rilevato

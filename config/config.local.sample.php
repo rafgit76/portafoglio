@@ -11,7 +11,7 @@ return [
     ],
     'app' => [
         'base_path' => '/apps/portafoglio',
-        'app_version' => '1.5.4',
+        'app_version' => '1.6.0',
         'timezone' => 'Europe/Rome',
         'enable_fx' => true,
         'enable_news' => false,
@@ -22,5 +22,12 @@ return [
         'thinking_level' => 'medium',
         'max_output_tokens' => 20000,
         'timeout_seconds' => 90,
+    ],
+    'privacy' => [
+        // Genera l'hash con: php -r "echo password_hash('1234', PASSWORD_DEFAULT);"
+        'pin_hash' => 'YOUR_PASSWORD_HASH',
+        'unlock_seconds' => 1800,
+        'max_attempts' => 10,
+        'lockout_seconds' => 900,
     ],
 ];

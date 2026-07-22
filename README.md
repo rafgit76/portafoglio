@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `1.5.4`
+Versione corrente: `1.6.0`
 
 ## Deploy (FTP)
 
@@ -15,8 +15,9 @@ Carica tutto in:
 1. Esegui `composer install --no-dev --optimize-autoloader` in locale e carica anche `vendor/`.
 2. Importa `sql/schema.sql` nel tuo DB Aruba.
 3. Copia `config/config.local.sample.php` in `config/config.local.php` e inserisci le credenziali DB reali.
-4. Verifica i permessi di scrittura delle cartelle `storage/uploads` e `storage/ai_reports`.
-5. Vai su `/apps/portafoglio/upload.php` e carica il primo file Fineco.
+4. Configura in `config/config.local.php` anche l'hash del PIN privacy di 4 cifre.
+5. Verifica i permessi di scrittura delle cartelle `storage`, `storage/uploads` e `storage/ai_reports`.
+6. Apri `/apps/portafoglio/`, sblocca il portafoglio e carica il primo file Fineco.
 
 Per creare una cartella FTP completa e pulita puoi eseguire:
 
@@ -36,6 +37,8 @@ Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto,
 - versione app e changelog visibili dal footer
 - configurazione applicativa esplicita per target PHP 8.4
 - libreria Chart.js servita localmente da `assets/vendor/` senza dipendenza CDN runtime
+- home pubblica priva di importi e pagine operative protette da PIN privacy
+- blocco di 15 minuti dopo 10 tentativi errati e scadenza dello sblocco dopo 30 minuti di inattivita
 
 ## Opzioni esterne
 
@@ -48,7 +51,8 @@ In `config/config.local.php` puoi regolare:
 
 ## Pagine
 
-- `index.php`: dashboard
+- `index.php`: home privacy senza dati economici e sblocco con PIN
+- `dashboard.php`: dashboard completa del portafoglio
 - `upload.php`: import diretto file Fineco `.xls`/`.xlsx` e conversione opzionale in `.xlsx`
 - `snapshots.php`: storico snapshot
 - `snapshot.php?id=...`: dettaglio snapshot
@@ -57,6 +61,14 @@ In `config/config.local.php` puoi regolare:
 - `ai_report.php`: Centro AI, generazione esplicita e archivio report
 - `ai_report_view.php`: dettaglio e stampa di un report AI archiviato
 - `changelog.php`: storico versioni applicative
+
+## PIN privacy
+
+Il PIN e una protezione semplice pensata per evitare che i dati del portafoglio siano visibili quando l'app viene aperta in presenza di altre persone. Non sostituisce un sistema di autenticazione multiutente.
+
+Salva soltanto l'hash del PIN in `config/config.local.php` oppure nella variabile ambiente `PORTFOLIO_PRIVACY_PIN_HASH`. Puoi generarlo con `password_hash()` come mostrato in `config/config.local.sample.php`. Il PIN non viene mai salvato in chiaro.
+
+Lo sblocco scade dopo 30 minuti di inattivita. Dopo 10 tentativi errati dallo stesso indirizzo IP, l'accesso resta bloccato per 15 minuti. Il registro tecnico e salvato in `storage/privacy_attempts.json`, escluso da Git e dai pacchetti FTP; la cartella `storage` deve essere scrivibile da PHP.
 
 ## Report AI
 

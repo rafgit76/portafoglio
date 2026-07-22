@@ -1,324 +1,273 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
-require_once __DIR__ . '/lib/fx.php';
-require_once __DIR__ . '/lib/news.php';
 
-$pageTitle = 'Dashboard';
-$pdo = db();
+$pageTitle = 'Home';
+$error = null;
+$privacyConfigured = privacy_is_configured();
+$returnPath = privacy_safe_return_path((string) ($_POST['return'] ?? $_GET['return'] ?? '/dashboard.php'));
 
-$period = $_GET['period'] ?? 'all';
-$allowedPeriods = ['1d', '1w', '1m', 'ytd', 'all'];
-if (!in_array($period, $allowedPeriods, true)) {
-    $period = 'all';
-}
-
-$enableFx = (bool) app_setting('enable_fx', true);
-$enableNews = (bool) app_setting('enable_news', false);
-
-$fx = $enableFx ? get_eurusd_rate(3600) : ['rate' => null, 'as_of' => null, 'error' => 'disabled'];
-$fxRateLabel = $fx['rate'] !== null ? number_format((float) $fx['rate'], 4, ',', '.') : 'N/D';
-$fxAsOfLabel = '-';
-if (!empty($fx['as_of'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        $fxAsOfLabel = (new DateTime($fx['as_of']))->format('d/m/Y');
+        $token = $_POST['csrf_token'] ?? null;
+        if (!is_valid_csrf_token(is_string($token) ? $token : null)) {
+            throw new RuntimeException('Richiesta non valida (token).');
+        }
+
+        $action = (string) ($_POST['action'] ?? '');
+        if ($action === 'privacy_lock') {
+            privacy_lock_session();
+            set_flash('success', 'Dati del portafoglio bloccati.');
+            redirect('/index.php');
+        }
+
+        if ($action !== 'privacy_unlock') {
+            throw new RuntimeException('Azione privacy non riconosciuta.');
+        }
+        if (!$privacyConfigured) {
+            throw new RuntimeException('PIN privacy non configurato sul server.');
+        }
+
+        $attemptStatus = privacy_attempt_status();
+        if ($attemptStatus['locked']) {
+            $minutes = max(1, (int) ceil(($attemptStatus['locked_until'] - time()) / 60));
+            throw new RuntimeException('Troppi tentativi errati. Riprova tra circa ' . $minutes . ' minuti.');
+        }
+
+        $pin = trim((string) ($_POST['pin'] ?? ''));
+        if (privacy_verify_pin($pin)) {
+            privacy_clear_failures();
+            privacy_unlock_session();
+            set_flash('success', 'Portafoglio sbloccato per 30 minuti di inattivita.');
+            header('Location: ' . app_base_path() . $returnPath);
+            exit;
+        }
+
+        $attemptStatus = privacy_record_failure();
+        if ($attemptStatus['locked']) {
+            throw new RuntimeException('PIN errato. Accesso bloccato per 15 minuti dopo 10 tentativi falliti.');
+        }
+
+        throw new RuntimeException(
+            'PIN errato. Tentativi rimasti: ' . (int) $attemptStatus['remaining_attempts'] . '.'
+        );
     } catch (Throwable $e) {
-        $fxAsOfLabel = (string) $fx['as_of'];
+        $error = $e->getMessage();
     }
 }
 
-$newsByCategory = [];
-if ($enableNews) {
-    $assetsForKeywords = $pdo->query('SELECT name, ticker FROM pf_assets WHERE is_active = 1')->fetchAll();
-    $portfolioKeywords = build_portfolio_keywords($assetsForKeywords);
-    $news = get_dashboard_news($portfolioKeywords, 1800);
-    $newsByCategory = $news['data'] ?? [];
-}
-
-$stats = [
-    'snapshots' => 0,
-    'assets' => 0,
-    'last_market_value' => 0,
-    'last_pnl' => 0,
-];
-
-$stats['snapshots'] = (int) $pdo->query('SELECT COUNT(*) FROM pf_snapshots')->fetchColumn();
-$stats['assets'] = (int) $pdo->query('SELECT COUNT(*) FROM pf_assets')->fetchColumn();
-
-$last = $pdo->query('SELECT snapshot_date, total_market_value, total_unrealized_pnl FROM pf_snapshots ORDER BY snapshot_date DESC LIMIT 1')->fetch();
-if ($last) {
-    $stats['last_market_value'] = (float) $last['total_market_value'];
-    $stats['last_pnl'] = (float) $last['total_unrealized_pnl'];
-}
-
-$history = $pdo->query('SELECT id, snapshot_date, total_market_value, total_cost_basis, total_unrealized_pnl FROM pf_snapshots ORDER BY snapshot_date DESC LIMIT 12')->fetchAll();
-$allHistory = $pdo->query('SELECT snapshot_date, total_market_value, total_cost_basis, total_unrealized_pnl FROM pf_snapshots ORDER BY snapshot_date ASC')->fetchAll();
-$pnlExtremes = [
-    'max' => null,
-    'min' => null,
-];
-
-foreach ($allHistory as $row) {
-    $pnlValue = (float) $row['total_unrealized_pnl'];
-
-    if ($pnlExtremes['max'] === null || $pnlValue > $pnlExtremes['max']['value']) {
-        $pnlExtremes['max'] = [
-            'value' => $pnlValue,
-            'date' => $row['snapshot_date'],
-        ];
-    }
-
-    if ($pnlExtremes['min'] === null || $pnlValue < $pnlExtremes['min']['value']) {
-        $pnlExtremes['min'] = [
-            'value' => $pnlValue,
-            'date' => $row['snapshot_date'],
-        ];
+$privacyUnlocked = $privacyConfigured && privacy_is_unlocked();
+$attemptStatus = ['locked' => false, 'locked_until' => 0, 'remaining_attempts' => 10];
+if ($privacyConfigured && !$privacyUnlocked) {
+    try {
+        $attemptStatus = privacy_attempt_status();
+    } catch (Throwable $e) {
+        $error = $error ?? $e->getMessage();
     }
 }
 
-$historyForChart = $allHistory;
-if (!empty($allHistory) && $period !== 'all') {
-    $latestDate = new DateTime(end($allHistory)['snapshot_date']);
-    $startDate = clone $latestDate;
+$unlockRequested = !$privacyUnlocked && (
+    (string) ($_GET['unlock'] ?? '') === '1'
+    || $error !== null
+    || $attemptStatus['locked']
+);
+$lockMinutes = $attemptStatus['locked']
+    ? max(1, (int) ceil(($attemptStatus['locked_until'] - time()) / 60))
+    : 0;
 
-    if ($period === '1d') {
-        // Keep only latest day available in history.
-    } elseif ($period === '1w') {
-        $startDate->modify('-6 days');
-    } elseif ($period === '1m') {
-        $startDate->modify('-1 month');
-    } elseif ($period === 'ytd') {
-        $startDate = new DateTime($latestDate->format('Y-01-01'));
-    }
-
-    $historyForChart = array_values(array_filter($allHistory, static function (array $row) use ($startDate): bool {
-        $d = new DateTime($row['snapshot_date']);
-        return $d >= $startDate;
-    }));
+$recentSnapshots = [];
+$archiveAvailable = false;
+try {
+    $recentSnapshots = db()->query(
+        'SELECT snapshot_date, created_at
+         FROM pf_snapshots
+         ORDER BY snapshot_date DESC, id DESC
+         LIMIT 4'
+    )->fetchAll();
+    $archiveAvailable = true;
+} catch (Throwable $e) {
+    $archiveAvailable = false;
 }
 
-$chartLabels = array_map(static fn($r) => $r['snapshot_date'], $historyForChart);
-$chartMarket = array_map(static fn($r) => round((float) $r['total_market_value'], 2), $historyForChart);
-$chartCost = array_map(static fn($r) => round((float) $r['total_cost_basis'], 2), $historyForChart);
-$chartPnl = array_map(static fn($r) => round((float) $r['total_unrealized_pnl'], 2), $historyForChart);
+$latestSnapshotLabel = 'Nessuno snapshot';
+$latestImportLabel = 'Non disponibile';
+if ($recentSnapshots !== []) {
+    try {
+        $latestSnapshotLabel = (new DateTimeImmutable((string) $recentSnapshots[0]['snapshot_date']))->format('d/m/Y');
+    } catch (Throwable $e) {
+        $latestSnapshotLabel = (string) $recentSnapshots[0]['snapshot_date'];
+    }
+    try {
+        $latestImportLabel = (new DateTimeImmutable((string) $recentSnapshots[0]['created_at']))->format('d/m/Y H:i');
+    } catch (Throwable $e) {
+        $latestImportLabel = (string) $recentSnapshots[0]['created_at'];
+    }
+}
+
+$geminiConfig = app_config()['gemini'] ?? [];
+$geminiKey = (string) ($geminiConfig['api_key'] ?? '');
+$geminiConfigured = $geminiKey !== '' && !str_contains($geminiKey, 'INSERISCI_CHIAVE');
 
 include __DIR__ . '/partials/header.php';
 ?>
-<section class="cards">
-    <article class="card"><h3>Snapshot</h3><p class="big"><?= (int) $stats['snapshots'] ?></p></article>
-    <article class="card"><h3>Strumenti</h3><p class="big"><?= (int) $stats['assets'] ?></p></article>
-    <article class="card"><h3>Ultimo valore</h3><p class="big money-big"><span>EUR</span><strong><?= number_format($stats['last_market_value'], 2, ',', '.') ?></strong></p></article>
-    <article class="card"><h3>Ultimo P/L</h3><p class="big money-big <?= $stats['last_pnl'] >= 0 ? 'pos' : 'neg' ?>"><span>EUR</span><strong><?= number_format($stats['last_pnl'], 2, ',', '.') ?></strong></p></article>
-    <?php if ($enableFx): ?>
-        <article class="card">
-            <h3>EUR/USD</h3>
-            <p class="big"><?= e($fxRateLabel) ?></p>
-            <p class="tiny-note">Fonte ECB, riferimento <?= e($fxAsOfLabel) ?></p>
-        </article>
-    <?php endif; ?>
-</section>
-
-<section class="panel">
-    <div class="panel-head">
-        <h2>Andamento storico</h2>
-        <form method="get" class="period-toolbar">
-            <button class="period-btn <?= $period === '1d' ? 'active' : '' ?>" type="submit" name="period" value="1d">1 giorno</button>
-            <button class="period-btn <?= $period === '1w' ? 'active' : '' ?>" type="submit" name="period" value="1w">1 settimana</button>
-            <button class="period-btn <?= $period === '1m' ? 'active' : '' ?>" type="submit" name="period" value="1m">1 mese</button>
-            <button class="period-btn <?= $period === 'ytd' ? 'active' : '' ?>" type="submit" name="period" value="ytd">YTD</button>
-            <button class="period-btn <?= $period === 'all' ? 'active' : '' ?>" type="submit" name="period" value="all">Tutto</button>
-        </form>
-    </div>
-
-    <?php if (count($historyForChart) === 0): ?>
-        <p>Nessun dato disponibile per il periodo selezionato.</p>
-    <?php else: ?>
-        <div class="split-chart-grid">
-            <article class="chart-card">
-                <h3>Valore di mercato</h3>
-                <div class="chart-wrap chart-wrap-compact">
-                    <canvas id="marketChart"></canvas>
-                </div>
-            </article>
-            <article class="chart-card">
-                <h3>Valore di carico</h3>
-                <div class="chart-wrap chart-wrap-compact">
-                    <canvas id="costChart"></canvas>
-                </div>
-            </article>
-            <article class="chart-card">
-                <h3>P/L</h3>
-                <div class="chart-wrap chart-wrap-compact">
-                    <canvas id="pnlChart"></canvas>
-                </div>
-            </article>
+<section class="panel home-hero">
+    <div class="home-hero-copy">
+        <span class="home-kicker">Archivio investimenti</span>
+        <h1>Il portafoglio resta riservato finche non decidi di aprirlo.</h1>
+        <p>Da qui puoi controllare lo stato dell'archivio e avviare le funzioni principali senza mostrare importi, strumenti o risultati.</p>
+        <div class="home-hero-actions">
+            <?php if ($privacyUnlocked): ?>
+                <a class="btn" href="<?= e(app_base_path()) ?>/dashboard.php">Apri dashboard</a>
+                <form method="post">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="privacy_lock">
+                    <button type="submit" class="btn-secondary">Blocca dati</button>
+                </form>
+            <?php else: ?>
+                <a class="btn" href="<?= e(app_base_path()) ?>/index.php?unlock=1&amp;return=<?= e(rawurlencode('/dashboard.php')) ?>#privacy-unlock">Sblocca portafoglio</a>
+            <?php endif; ?>
         </div>
-    <?php endif; ?>
-</section>
-
-<?php if ($pnlExtremes['max'] !== null && $pnlExtremes['min'] !== null): ?>
-<section class="panel">
-    <div class="panel-head">
-        <h2>Estremi P/L storico</h2>
-        <span class="tiny-note">Massimo e minimo P/L mai registrati negli snapshot</span>
     </div>
-
-    <div class="cards">
-        <article class="card">
-            <h3>Massimo P/L</h3>
-            <p class="big money-big <?= $pnlExtremes['max']['value'] >= 0 ? 'pos' : 'neg' ?>"><span>EUR</span><strong><?= number_format($pnlExtremes['max']['value'], 2, ',', '.') ?></strong></p>
-            <p class="tiny-note">Raggiunto il <?= e($pnlExtremes['max']['date']) ?></p>
-        </article>
-        <article class="card">
-            <h3>Minimo P/L</h3>
-            <p class="big money-big <?= $pnlExtremes['min']['value'] >= 0 ? 'pos' : 'neg' ?>"><span>EUR</span><strong><?= number_format($pnlExtremes['min']['value'], 2, ',', '.') ?></strong></p>
-            <p class="tiny-note">Raggiunto il <?= e($pnlExtremes['min']['date']) ?></p>
-        </article>
+    <div class="home-privacy-state <?= $privacyUnlocked ? 'is-unlocked' : 'is-locked' ?>">
+        <span class="home-privacy-symbol" aria-hidden="true"></span>
+        <div>
+            <strong><?= $privacyUnlocked ? 'Dati sbloccati' : 'Dati protetti' ?></strong>
+            <span><?= $privacyUnlocked ? 'Blocco automatico dopo 30 minuti di inattivita' : 'Nessun valore e visibile nella home' ?></span>
+        </div>
     </div>
 </section>
+
+<?php if (!$privacyConfigured): ?>
+    <div class="flash flash-error">PIN privacy non configurato. Le pagine operative restano bloccate.</div>
 <?php endif; ?>
 
-<section class="panel">
-    <h2>Ultimi snapshot</h2>
-    <?php if (!$history): ?>
-        <p>Nessun dato ancora caricato. Vai su <a href="<?= e(app_base_path()) ?>/upload.php">Upload</a>.</p>
-    <?php else: ?>
-        <table>
-            <thead>
-                <tr>
-                    <th>Data</th>
-                    <th>Valore di carico</th>
-                    <th>Valore di mercato</th>
-                    <th>P/L</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($history as $row): ?>
-                <tr>
-                    <td><?= e($row['snapshot_date']) ?></td>
-                    <td>EUR <?= number_format((float) $row['total_cost_basis'], 2, ',', '.') ?></td>
-                    <td>EUR <?= number_format((float) $row['total_market_value'], 2, ',', '.') ?></td>
-                    <td class="<?= (float) $row['total_unrealized_pnl'] >= 0 ? 'pos' : 'neg' ?>">EUR <?= number_format((float) $row['total_unrealized_pnl'], 2, ',', '.') ?></td>
-                    <td><a class="btn-link" href="<?= e(app_base_path()) ?>/snapshot.php?id=<?= (int) $row['id'] ?>">Apri</a></td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-    <?php endif; ?>
-</section>
+<?php if ($error): ?>
+    <div class="flash flash-error"><?= e($error) ?></div>
+<?php endif; ?>
 
-<?php if ($enableNews): ?>
-    <section class="panel">
-        <div class="panel-head">
-            <h2>News Rilevanti</h2>
-            <span class="tiny-note">Selezione per finanza, politica, AI e hi-tech (con priorita' su parole chiave del tuo portafoglio)</span>
+<?php if ($unlockRequested): ?>
+    <section class="panel privacy-unlock-panel" id="privacy-unlock">
+        <div>
+            <span class="home-kicker">Accesso riservato</span>
+            <h2>Sblocca il portafoglio</h2>
+            <p>Inserisci il PIN di 4 cifre. Dopo 10 errori l'accesso viene sospeso per 15 minuti.</p>
         </div>
 
-        <div class="news-grid">
-            <?php foreach ($newsByCategory as $category => $items): ?>
-                <article class="news-card">
-                    <h3><?= e($category) ?></h3>
-                    <?php if (empty($items)): ?>
-                        <p class="tiny-note">Nessuna notizia disponibile ora.</p>
-                    <?php else: ?>
-                        <ul class="news-list">
-                            <?php foreach ($items as $item): ?>
-                                <?php
-                                $dateLabel = '';
-                                if (!empty($item['timestamp'])) {
-                                    $dateLabel = date('d/m H:i', (int) $item['timestamp']);
-                                }
-                                ?>
-                                <li>
-                                    <a href="<?= e($item['link']) ?>" target="_blank" rel="noopener noreferrer"><?= e($item['title']) ?></a>
-                                    <?php if ($dateLabel !== ''): ?>
-                                        <div class="tiny-note"><?= e($dateLabel) ?></div>
-                                    <?php endif; ?>
-                                </li>
-                            <?php endforeach; ?>
-                        </ul>
-                    <?php endif; ?>
-                </article>
-            <?php endforeach; ?>
-        </div>
+        <?php if ($attemptStatus['locked']): ?>
+            <div class="privacy-lockout-message">
+                <strong>Accesso temporaneamente bloccato</strong>
+                <span>Riprova tra circa <?= (int) $lockMinutes ?> minuti.</span>
+            </div>
+        <?php else: ?>
+            <form method="post" class="privacy-unlock-form">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="privacy_unlock">
+                <input type="hidden" name="return" value="<?= e($returnPath) ?>">
+                <label for="privacy-pin">PIN</label>
+                <input
+                    id="privacy-pin"
+                    name="pin"
+                    type="password"
+                    inputmode="numeric"
+                    pattern="[0-9]{4}"
+                    minlength="4"
+                    maxlength="4"
+                    autocomplete="off"
+                    required
+                    autofocus
+                    aria-describedby="privacy-pin-note"
+                >
+                <button type="submit">Sblocca</button>
+                <span id="privacy-pin-note" class="tiny-note">Sblocco valido fino a 30 minuti dall'ultima attivita.</span>
+            </form>
+        <?php endif; ?>
     </section>
 <?php endif; ?>
 
-<?php if (count($historyForChart) > 0): ?>
-<script src="<?= e(app_base_path()) ?>/assets/vendor/chart.umd.min.js"></script>
-<script>
-const labels = <?= json_encode($chartLabels, JSON_UNESCAPED_UNICODE) ?>;
-const marketData = <?= json_encode($chartMarket) ?>;
-const costData = <?= json_encode($chartCost) ?>;
-const pnlData = <?= json_encode($chartPnl) ?>;
+<section class="home-section">
+    <div class="panel-head">
+        <div>
+            <h2>Azioni rapide</h2>
+            <p class="tiny-note">Quando i dati sono bloccati, il PIN viene richiesto prima di aprire la funzione.</p>
+        </div>
+    </div>
+    <div class="home-action-grid">
+        <a class="home-action" href="<?= e(app_base_path()) ?>/upload.php">
+            <span class="home-action-index">01</span>
+            <strong>Carica file Fineco</strong>
+            <span>Importa il nuovo report XLS o XLSX e crea lo snapshot.</span>
+        </a>
+        <a class="home-action" href="<?= e(app_base_path()) ?>/dashboard.php">
+            <span class="home-action-index">02</span>
+            <strong>Apri dashboard</strong>
+            <span>Consulta valori complessivi, grafici ed estremi storici.</span>
+        </a>
+        <a class="home-action" href="<?= e(app_base_path()) ?>/andamento.php">
+            <span class="home-action-index">03</span>
+            <strong>Consulta andamento</strong>
+            <span>Esplora lo storico per titolo con paginazione ed export.</span>
+        </a>
+        <a class="home-action" href="<?= e(app_base_path()) ?>/ai_report.php">
+            <span class="home-action-index">04</span>
+            <strong>Centro AI</strong>
+            <span>Genera analisi controllate e consulta l'archivio dei report.</span>
+        </a>
+    </div>
+</section>
 
-const eurIt = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-const chartTextColor = '#334650';
-const chartGridColor = 'rgba(70, 92, 104, 0.16)';
-const chartTooltipBg = 'rgba(15, 31, 41, 0.94)';
+<section class="home-status-grid" aria-label="Stato applicazione">
+    <article class="home-status-item">
+        <span>Ultimo snapshot</span>
+        <strong><?= e($latestSnapshotLabel) ?></strong>
+        <small>Nessun importo mostrato</small>
+    </article>
+    <article class="home-status-item">
+        <span>Ultimo caricamento</span>
+        <strong><?= e($latestImportLabel) ?></strong>
+        <small>Attivita archivio</small>
+    </article>
+    <article class="home-status-item">
+        <span>Archivio</span>
+        <strong><?= $archiveAvailable ? 'Disponibile' : 'Non raggiungibile' ?></strong>
+        <small>Connessione database</small>
+    </article>
+    <article class="home-status-item">
+        <span>Report AI</span>
+        <strong><?= $geminiConfigured ? 'Configurato' : 'Non configurato' ?></strong>
+        <small><?= e((string) ($geminiConfig['model'] ?? 'Gemini')) ?></small>
+    </article>
+</section>
 
-function createHistoryChart(canvasId, label, data, borderColor, backgroundColor, axisTitle) {
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels,
-            datasets: [
-                {
-                    label,
-                    data,
-                    borderColor,
-                    backgroundColor,
-                    tension: 0.25,
-                    borderWidth: 2,
-                    pointRadius: 3
+<?php if ($recentSnapshots !== []): ?>
+    <section class="panel home-activity-panel">
+        <div class="panel-head">
+            <div>
+                <h2>Attivita recente</h2>
+                <p class="tiny-note">Sono mostrate soltanto date e orari, mai i valori del portafoglio.</p>
+            </div>
+            <a class="btn-link" href="<?= e(app_base_path()) ?>/snapshots.php">Apri storico</a>
+        </div>
+        <div class="home-activity-list">
+            <?php foreach ($recentSnapshots as $snapshot): ?>
+                <?php
+                try {
+                    $snapshotDate = (new DateTimeImmutable((string) $snapshot['snapshot_date']))->format('d/m/Y');
+                } catch (Throwable $e) {
+                    $snapshotDate = (string) $snapshot['snapshot_date'];
                 }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false
-            },
-            plugins: {
-                legend: { labels: { color: chartTextColor } },
-                tooltip: {
-                    backgroundColor: chartTooltipBg,
-                    titleColor: '#ffffff',
-                    bodyColor: '#f2fbff',
-                    borderColor: 'rgba(255,255,255,0.25)',
-                    borderWidth: 1,
-                    callbacks: {
-                        label: function(context) {
-                            return context.dataset.label + ': ' + eurIt.format(context.parsed.y);
-                        }
-                    }
+                try {
+                    $createdAt = (new DateTimeImmutable((string) $snapshot['created_at']))->format('H:i');
+                } catch (Throwable $e) {
+                    $createdAt = (string) $snapshot['created_at'];
                 }
-            },
-            scales: {
-                x: {
-                    ticks: { color: chartTextColor },
-                    grid: { color: chartGridColor }
-                },
-                y: {
-                    beginAtZero: false,
-                    ticks: { color: chartTextColor },
-                    grid: { color: chartGridColor },
-                    title: { display: true, text: axisTitle, color: chartTextColor }
-                }
-            }
-        }
-    });
-}
-
-createHistoryChart('marketChart', 'Valore mercato', marketData, '#0f9488', 'rgba(15,148,136,0.12)', 'Valore mercato (EUR)');
-createHistoryChart('costChart', 'Valore carico', costData, '#2f5fbb', 'rgba(47,95,187,0.10)', 'Valore carico (EUR)');
-createHistoryChart('pnlChart', 'P/L', pnlData, '#137a3d', 'rgba(19,122,61,0.10)', 'P/L (EUR)');
-</script>
+                ?>
+                <div>
+                    <span class="home-activity-dot" aria-hidden="true"></span>
+                    <strong>Snapshot del <?= e($snapshotDate) ?></strong>
+                    <span>Registrato alle <?= e($createdAt) ?></span>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </section>
 <?php endif; ?>
 
 <?php include __DIR__ . '/partials/footer.php'; ?>

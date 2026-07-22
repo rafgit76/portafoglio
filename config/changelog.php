@@ -2,6 +2,21 @@
 
 return [
     [
+        'version' => '1.6.0',
+        'date' => '2026-07-22',
+        'title' => 'Home riservata e sblocco con PIN',
+        'changes' => [
+            'Aggiunta una vera home page priva di importi, strumenti e risultati del portafoglio.',
+            'Spostata la dashboard completa nella pagina dashboard.php.',
+            'Protette centralmente tutte le pagine operative con un PIN privacy di 4 cifre.',
+            'Mantenuto lo sblocco per 30 minuti di inattivita con blocco automatico della pagina e possibilita di blocco manuale.',
+            'Aggiunto il blocco temporaneo di 15 minuti dopo 10 tentativi PIN errati dallo stesso indirizzo IP.',
+            'Aggiunte azioni rapide, stato dei servizi e attivita recenti senza mostrare dati economici.',
+            'Disabilitata la cache delle pagine per evitare di recuperare dati protetti con la navigazione Indietro.',
+            'Escluso dai pacchetti FTP il registro locale dei tentativi di accesso.',
+        ],
+    ],
+    [
         'version' => '1.5.4',
         'date' => '2026-07-22',
         'title' => 'Avanzamento visibile durante i report AI',

@@ -81,6 +81,284 @@ function is_valid_csrf_token(?string $token): bool
     return is_string($token) && $token !== '' && hash_equals(csrf_token(), $token);
 }
 
+function privacy_config(): array
+{
+    $config = app_config()['privacy'] ?? [];
+
+    return [
+        'pin_hash' => (string) ($config['pin_hash'] ?? ''),
+        'unlock_seconds' => max(60, (int) ($config['unlock_seconds'] ?? 1800)),
+        'max_attempts' => max(10, (int) ($config['max_attempts'] ?? 10)),
+        'lockout_seconds' => max(60, (int) ($config['lockout_seconds'] ?? 900)),
+    ];
+}
+
+function privacy_is_configured(): bool
+{
+    $hash = privacy_config()['pin_hash'];
+    if ($hash === '') {
+        return false;
+    }
+
+    $info = password_get_info($hash);
+    return ($info['algoName'] ?? 'unknown') !== 'unknown';
+}
+
+function privacy_is_unlocked(bool $touchActivity = true): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    $lastActivity = (int) ($_SESSION['privacy_last_activity'] ?? 0);
+    $timeout = privacy_config()['unlock_seconds'];
+    if ($lastActivity <= 0 || (time() - $lastActivity) > $timeout) {
+        unset($_SESSION['privacy_last_activity']);
+        return false;
+    }
+
+    if ($touchActivity) {
+        $_SESSION['privacy_last_activity'] = time();
+    }
+
+    return true;
+}
+
+function privacy_unlock_session(): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    session_regenerate_id(true);
+    $_SESSION['privacy_last_activity'] = time();
+}
+
+function privacy_lock_session(): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    unset($_SESSION['privacy_last_activity']);
+    session_regenerate_id(true);
+}
+
+function privacy_public_scripts(): array
+{
+    return ['index.php', 'changelog.php'];
+}
+
+function privacy_current_script(): string
+{
+    return basename((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+}
+
+function privacy_current_relative_uri(): string
+{
+    $requestUri = (string) ($_SERVER['REQUEST_URI'] ?? '/dashboard.php');
+    $basePath = app_base_path();
+    if ($basePath !== '' && str_starts_with($requestUri, $basePath)) {
+        $requestUri = substr($requestUri, strlen($basePath));
+    }
+
+    return privacy_safe_return_path($requestUri);
+}
+
+function privacy_safe_return_path(?string $path): string
+{
+    $fallback = '/dashboard.php';
+    if (!is_string($path) || $path === '' || !str_starts_with($path, '/') || str_starts_with($path, '//')) {
+        return $fallback;
+    }
+
+    $parts = parse_url($path);
+    if (!is_array($parts)) {
+        return $fallback;
+    }
+
+    $script = basename((string) ($parts['path'] ?? ''));
+    $allowedScripts = [
+        'dashboard.php',
+        'andamento.php',
+        'upload.php',
+        'snapshots.php',
+        'snapshot.php',
+        'compare.php',
+        'assets.php',
+        'asset.php',
+        'ai_report.php',
+        'ai_report_view.php',
+    ];
+    if (!in_array($script, $allowedScripts, true)) {
+        return $fallback;
+    }
+
+    $safe = '/' . $script;
+    $query = (string) ($parts['query'] ?? '');
+    if ($query !== '' && !str_contains($query, "\r") && !str_contains($query, "\n")) {
+        $safe .= '?' . $query;
+    }
+
+    return $safe;
+}
+
+function privacy_require_unlocked(): void
+{
+    if (in_array(privacy_current_script(), privacy_public_scripts(), true)) {
+        return;
+    }
+
+    if (privacy_is_configured() && privacy_is_unlocked()) {
+        return;
+    }
+
+    $returnPath = privacy_current_relative_uri();
+    redirect('/index.php?unlock=1&return=' . rawurlencode($returnPath));
+}
+
+function privacy_attempt_store_path(): string
+{
+    return __DIR__ . '/../storage/privacy_attempts.json';
+}
+
+function privacy_client_key(): string
+{
+    $address = trim((string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+    $key = privacy_config()['pin_hash'];
+    if ($key === '') {
+        $key = __FILE__;
+    }
+
+    return hash_hmac('sha256', $address, $key);
+}
+
+function privacy_attempt_store_update(callable $callback): mixed
+{
+    $path = privacy_attempt_store_path();
+    ensure_directory(dirname($path));
+    $handle = @fopen($path, 'c+');
+    if (!is_resource($handle)) {
+        throw new RuntimeException('Impossibile accedere al registro dei tentativi PIN.');
+    }
+
+    try {
+        if (!flock($handle, LOCK_EX)) {
+            throw new RuntimeException('Impossibile bloccare il registro dei tentativi PIN.');
+        }
+
+        rewind($handle);
+        $raw = stream_get_contents($handle);
+        $data = is_string($raw) && $raw !== '' ? json_decode($raw, true) : [];
+        if (!is_array($data)) {
+            $data = [];
+        }
+
+        $now = time();
+        foreach ($data as $key => $entry) {
+            $lastFailure = (int) ($entry['last_failure'] ?? 0);
+            $lockedUntil = (int) ($entry['locked_until'] ?? 0);
+            if ($lastFailure < ($now - 86400) && $lockedUntil <= $now) {
+                unset($data[$key]);
+            }
+        }
+
+        $result = $callback($data, $now);
+        $encoded = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if (!is_string($encoded)) {
+            throw new RuntimeException('Impossibile aggiornare il registro dei tentativi PIN.');
+        }
+
+        rewind($handle);
+        ftruncate($handle, 0);
+        fwrite($handle, $encoded . "\n");
+        fflush($handle);
+        flock($handle, LOCK_UN);
+
+        return $result;
+    } finally {
+        fclose($handle);
+    }
+}
+
+function privacy_attempt_status(): array
+{
+    $clientKey = privacy_client_key();
+    $config = privacy_config();
+
+    return privacy_attempt_store_update(static function (array &$data, int $now) use ($clientKey, $config): array {
+        $entry = is_array($data[$clientKey] ?? null) ? $data[$clientKey] : [];
+        $lockedUntil = (int) ($entry['locked_until'] ?? 0);
+        if ($lockedUntil > 0 && $lockedUntil <= $now) {
+            unset($data[$clientKey]);
+            $entry = [];
+            $lockedUntil = 0;
+        }
+
+        $failures = (int) ($entry['failures'] ?? 0);
+        return [
+            'locked' => $lockedUntil > $now,
+            'locked_until' => $lockedUntil,
+            'remaining_attempts' => max(0, $config['max_attempts'] - $failures),
+        ];
+    });
+}
+
+function privacy_record_failure(): array
+{
+    $clientKey = privacy_client_key();
+    $config = privacy_config();
+
+    return privacy_attempt_store_update(static function (array &$data, int $now) use ($clientKey, $config): array {
+        $entry = is_array($data[$clientKey] ?? null) ? $data[$clientKey] : [];
+        $lockedUntil = (int) ($entry['locked_until'] ?? 0);
+        if ($lockedUntil > $now) {
+            return [
+                'locked' => true,
+                'locked_until' => $lockedUntil,
+                'remaining_attempts' => 0,
+            ];
+        }
+
+        $failures = (int) ($entry['failures'] ?? 0) + 1;
+        $lockedUntil = 0;
+        if ($failures >= $config['max_attempts']) {
+            $failures = $config['max_attempts'];
+            $lockedUntil = $now + $config['lockout_seconds'];
+        }
+
+        $data[$clientKey] = [
+            'failures' => $failures,
+            'locked_until' => $lockedUntil,
+            'last_failure' => $now,
+        ];
+
+        return [
+            'locked' => $lockedUntil > $now,
+            'locked_until' => $lockedUntil,
+            'remaining_attempts' => max(0, $config['max_attempts'] - $failures),
+        ];
+    });
+}
+
+function privacy_clear_failures(): void
+{
+    $clientKey = privacy_client_key();
+    privacy_attempt_store_update(static function (array &$data, int $now) use ($clientKey): bool {
+        unset($data[$clientKey]);
+        return true;
+    });
+}
+
+function privacy_verify_pin(string $pin): bool
+{
+    if (!preg_match('/^\d{4}$/', $pin)) {
+        return false;
+    }
+
+    return privacy_is_configured() && password_verify($pin, privacy_config()['pin_hash']);
+}
+
 function ensure_directory(string $path): void
 {
     if (is_dir($path)) {

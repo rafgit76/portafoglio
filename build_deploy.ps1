@@ -29,7 +29,8 @@ $excludeFiles = @(
     'build_deploy.ps1',
     'composer.json',
     'composer.lock',
-    'ai_report_cache.json'
+    'ai_report_cache.json',
+    'privacy_attempts.json'
 )
 
 if ($SkipLocalConfig) {

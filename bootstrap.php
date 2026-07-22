@@ -28,4 +28,9 @@ if (!headers_sent()) {
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+    header('Cache-Control: no-store, private, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: 0');
 }
+
+privacy_require_unlocked();
