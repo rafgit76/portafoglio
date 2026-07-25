@@ -2,6 +2,20 @@
 
 return [
     [
+        'version' => '1.8.0',
+        'date' => '2026-07-25',
+        'title' => 'Cosa e cambiato settimanale?',
+        'changes' => [
+            'Aggiunto nel Centro AI il confronto settimanale tra lo snapshot del sabato corrente e quello del sabato precedente.',
+            'Consentita la generazione esclusivamente il sabato, con controllo applicato anche lato server per evitare chiamate Gemini accidentali negli altri giorni.',
+            'Richiesta la presenza degli snapshot delle due date esatte, senza sostituire il sabato mancante con rilevazioni di altri giorni.',
+            'Aggiunta un\'anteprima gratuita calcolata da PHP con delta complessivi e principali variazioni della settimana.',
+            'Aggiunti prompt, archivio, badge e overlay di avanzamento dedicati al report settimanale.',
+            'Aggiunto il versionamento automatico dello script AI per evitare che il browser riutilizzi una copia obsoleta dalla cache.',
+            'Esclusi gli artefatti temporanei dalla cartella FTP generata per il deploy.',
+        ],
+    ],
+    [
         'version' => '1.7.0',
         'date' => '2026-07-22',
         'title' => 'Cosa e cambiato?',

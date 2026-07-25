@@ -18,7 +18,8 @@ New-Item -ItemType Directory -Path $destination | Out-Null
 $excludeDirs = @(
     (Join-Path $projectRoot '.git'),
     (Join-Path $projectRoot 'storage\ai_reports'),
-    (Join-Path $projectRoot 'storage\uploads')
+    (Join-Path $projectRoot 'storage\uploads'),
+    (Join-Path $projectRoot 'tmp')
 )
 
 $excludeFiles = @(

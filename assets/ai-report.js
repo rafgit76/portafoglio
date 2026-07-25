@@ -11,7 +11,9 @@
     const phase = document.getElementById('ai-generation-phase');
     const percent = document.getElementById('ai-generation-percent');
     const closeButton = document.getElementById('ai-generation-close');
-    const forms = document.querySelectorAll('#general-report-form, #custom-report-form, #changes-report-form');
+    const forms = document.querySelectorAll(
+        '#general-report-form, #custom-report-form, #changes-report-form, #weekly-changes-report-form'
+    );
 
     if (!overlay || !dialog || !indicator || !title || !message || !progress || !progressBar || !phase || !percent || !closeButton || forms.length === 0 || !window.fetch) {
         return;
@@ -48,14 +50,20 @@
         indicator.classList.remove('is-success', 'is-error');
         if (action === 'generate_custom') {
             title.textContent = 'Generazione del report personalizzato';
+        } else if (action === 'generate_weekly_changes') {
+            title.textContent = 'Analisi della settimana';
         } else if (action === 'generate_changes') {
             title.textContent = 'Analisi delle ultime variazioni';
         } else {
             title.textContent = 'Generazione del report in corso';
         }
-        message.textContent = action === 'generate_changes'
-            ? 'Gemini sta confrontando gli ultimi due snapshot e verificando le variazioni.'
-            : 'Gemini sta analizzando gli snapshot. L\'operazione puo richiedere diversi secondi.';
+        if (action === 'generate_weekly_changes') {
+            message.textContent = 'Gemini sta confrontando i due snapshot del sabato e verificando le variazioni della settimana.';
+        } else if (action === 'generate_changes') {
+            message.textContent = 'Gemini sta confrontando gli ultimi due snapshot e verificando le variazioni.';
+        } else {
+            message.textContent = 'Gemini sta analizzando gli snapshot. L\'operazione puo richiedere diversi secondi.';
+        }
         closeButton.hidden = true;
         setProgress(8);
         overlay.hidden = false;

@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $action = (string) ($_POST['action'] ?? '');
-        if (!in_array($action, ['generate_general', 'generate_custom', 'generate_changes'], true)) {
+        if (!in_array($action, ['generate_general', 'generate_custom', 'generate_changes', 'generate_weekly_changes'], true)) {
             throw new RuntimeException('Azione AI non riconosciuta.');
         }
 
@@ -56,14 +56,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        $built = $action === 'generate_changes'
-            ? ai_report_build_changes_payload(db())
-            : ai_report_build_payload(db());
+        $built = match ($action) {
+            'generate_changes' => ai_report_build_changes_payload(db()),
+            'generate_weekly_changes' => ai_report_build_weekly_changes_payload(db()),
+            default => ai_report_build_payload(db()),
+        };
         if ($action === 'generate_custom') {
             $generated = ai_report_generate_custom_with_gemini($built['payload'], $customPrompt);
             $title = $customTitle !== '' ? $customTitle : 'Analisi personalizzata';
             $record = ai_report_archive_generated($generated, $built, 'custom', $title, $customPrompt);
             set_flash('success', 'Report personalizzato generato e archiviato.');
+        } elseif ($action === 'generate_weekly_changes') {
+            $generated = ai_report_generate_weekly_changes_with_gemini($built['payload']);
+            $dateTo = (string) ($built['payload']['date_range']['to'] ?? '');
+            $title = 'Cosa e cambiato settimanale?';
+            if ($dateTo !== '') {
+                $title .= ' - ' . ai_report_format_date_it($dateTo);
+            }
+            $record = ai_report_archive_generated($generated, $built, 'weekly_changes', $title);
+            set_flash('success', 'Confronto settimanale generato e archiviato.');
         } elseif ($action === 'generate_changes') {
             $generated = ai_report_generate_changes_with_gemini($built['payload']);
             $dateTo = (string) ($built['payload']['date_range']['to'] ?? '');
@@ -115,6 +126,11 @@ $changesPromptTemplate = ai_report_build_changes_prompt(
     '[DATI DEGLI ULTIMI DUE SNAPSHOT INSERITI AUTOMATICAMENTE DALL\'APP]',
     '[FATTI DEL CONFRONTO CALCOLATI E FORMATTATI AUTOMATICAMENTE DA PHP]'
 );
+$weeklyChangesPromptTemplate = ai_report_build_changes_prompt(
+    '[DATI DEI DUE SNAPSHOT DEL SABATO INSERITI AUTOMATICAMENTE DALL\'APP]',
+    '[FATTI DEL CONFRONTO SETTIMANALE CALCOLATI E FORMATTATI AUTOMATICAMENTE DA PHP]',
+    'weekly'
+);
 $changesBuilt = null;
 $changesUnavailable = null;
 try {
@@ -128,6 +144,21 @@ $changesSummary = is_array($changesPayload['change_summary'] ?? null) ? $changes
 $changesDateRange = is_array($changesPayload['date_range'] ?? null) ? $changesPayload['date_range'] : [];
 $changesPositions = is_array($changesPayload['first_to_latest_position_changes'] ?? null)
     ? array_slice($changesPayload['first_to_latest_position_changes'], 0, 3)
+    : [];
+$isSaturday = (new DateTimeImmutable('today'))->format('N') === '6';
+$weeklyChangesBuilt = null;
+$weeklyChangesUnavailable = null;
+try {
+    $weeklyChangesBuilt = ai_report_build_weekly_changes_payload(db());
+} catch (Throwable $e) {
+    $weeklyChangesUnavailable = $e->getMessage();
+}
+$weeklyChangesPayload = is_array($weeklyChangesBuilt['payload'] ?? null) ? $weeklyChangesBuilt['payload'] : [];
+$weeklyChangesRange = is_array($weeklyChangesPayload['range_summary'] ?? null) ? $weeklyChangesPayload['range_summary'] : [];
+$weeklyChangesSummary = is_array($weeklyChangesPayload['change_summary'] ?? null) ? $weeklyChangesPayload['change_summary'] : [];
+$weeklyChangesDateRange = is_array($weeklyChangesPayload['date_range'] ?? null) ? $weeklyChangesPayload['date_range'] : [];
+$weeklyChangesPositions = is_array($weeklyChangesPayload['first_to_latest_position_changes'] ?? null)
+    ? array_slice($weeklyChangesPayload['first_to_latest_position_changes'], 0, 3)
     : [];
 $formatSignedMoney = static function (float $value): string {
     return 'EUR ' . ai_report_format_number_it($value, 2, true);
@@ -254,6 +285,81 @@ include __DIR__ . '/partials/header.php';
                     <div class="ai-inline-confirm-body">
                         <strong>Conferma generazione</strong>
                         <p>Gemini ricevera soltanto gli ultimi due snapshot e i delta gia verificati da PHP. Il confronto verra salvato nell'archivio.</p>
+                        <button type="submit" name="confirmed" value="1" <?= !$apiConfigured ? 'disabled' : '' ?>>Conferma e analizza</button>
+                    </div>
+                </details>
+            </form>
+        </div>
+    <?php endif; ?>
+</section>
+
+<section class="panel ai-changes-panel ai-weekly-changes-panel" id="ai-weekly-changes">
+    <div class="panel-head">
+        <div>
+            <span class="ai-generator-kicker">Riepilogo del sabato</span>
+            <h2>Cosa e cambiato settimanale?</h2>
+            <?php if ($weeklyChangesBuilt !== null): ?>
+                <p>Confronta il sabato <?= e(ai_report_format_date_it((string) ($weeklyChangesDateRange['to'] ?? ''))) ?> con il sabato <?= e(ai_report_format_date_it((string) ($weeklyChangesDateRange['from'] ?? ''))) ?>.</p>
+            <?php else: ?>
+                <p>Confronta esclusivamente lo snapshot di questo sabato con quello del sabato precedente.</p>
+            <?php endif; ?>
+        </div>
+        <?php
+        $weeklyStatusClass = $weeklyChangesBuilt !== null
+            ? 'ai-status-ready'
+            : ($isSaturday ? 'ai-status-error' : 'ai-status-scheduled');
+        $weeklyStatusLabel = $weeklyChangesBuilt !== null
+            ? 'Settimana disponibile'
+            : ($isSaturday ? 'Dati insufficienti' : 'Solo il sabato');
+        ?>
+        <span class="ai-status <?= e($weeklyStatusClass) ?>"><?= e($weeklyStatusLabel) ?></span>
+    </div>
+
+    <?php if ($weeklyChangesBuilt === null): ?>
+        <div class="ai-empty-state">
+            <strong>Confronto settimanale non disponibile</strong>
+            <p><?= e($weeklyChangesUnavailable ?? 'La funzione si attiva soltanto il sabato.') ?></p>
+        </div>
+    <?php else: ?>
+        <div class="ai-change-metrics" aria-label="Anteprima variazioni settimanali">
+            <?php foreach ([
+                'Valore di mercato' => (float) ($weeklyChangesRange['delta_market_value'] ?? 0),
+                'Valore di carico' => (float) ($weeklyChangesRange['delta_cost_basis'] ?? 0),
+                'P/L non realizzato' => (float) ($weeklyChangesRange['delta_unrealized_pnl'] ?? 0),
+            ] as $label => $value): ?>
+                <div>
+                    <span><?= e($label) ?></span>
+                    <strong class="<?= $value >= 0 ? 'pos' : 'neg' ?>"><?= e($formatSignedMoney($value)) ?></strong>
+                </div>
+            <?php endforeach; ?>
+            <div>
+                <span>Strumenti su / giu</span>
+                <strong><?= (int) ($weeklyChangesSummary['positions_up'] ?? 0) ?> / <?= (int) ($weeklyChangesSummary['positions_down'] ?? 0) ?></strong>
+            </div>
+        </div>
+
+        <div class="ai-changes-body">
+            <div>
+                <h3>Variazioni principali della settimana</h3>
+                <ul class="ai-change-list">
+                    <?php foreach ($weeklyChangesPositions as $position): ?>
+                        <?php $delta = (float) ($position['delta_market_value'] ?? 0); ?>
+                        <li>
+                            <span><?= e((string) ($position['name'] ?? 'Strumento')) ?></span>
+                            <strong class="<?= $delta >= 0 ? 'pos' : 'neg' ?>"><?= e($formatSignedMoney($delta)) ?></strong>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+                <p class="tiny-note">Anteprima PHP gratuita. La chiamata a Gemini parte soltanto dopo la conferma.</p>
+            </div>
+            <form method="post" id="weekly-changes-report-form">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="generate_weekly_changes">
+                <details class="ai-inline-confirm">
+                    <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Spiegami la settimana</summary>
+                    <div class="ai-inline-confirm-body">
+                        <strong>Conferma analisi settimanale</strong>
+                        <p>Gemini ricevera soltanto i due snapshot del sabato distanti sette giorni e i delta verificati da PHP.</p>
                         <button type="submit" name="confirmed" value="1" <?= !$apiConfigured ? 'disabled' : '' ?>>Conferma e analizza</button>
                     </div>
                 </details>
@@ -407,6 +513,17 @@ include __DIR__ . '/partials/header.php';
             <pre><?= e($changesPromptTemplate) ?></pre>
         </div>
     </details>
+    <details class="ai-prompt-details">
+        <summary>Mostra il prompt Cosa e cambiato settimanale?</summary>
+        <div class="ai-prompt-block">
+            <h3>System instruction del confronto settimanale</h3>
+            <pre><?= e(ai_report_changes_system_instruction('weekly')) ?></pre>
+        </div>
+        <div class="ai-prompt-block">
+            <h3>Struttura del confronto settimanale</h3>
+            <pre><?= e($weeklyChangesPromptTemplate) ?></pre>
+        </div>
+    </details>
 </section>
 
 <div class="ai-generation-overlay" id="ai-generation-overlay" hidden>
@@ -427,5 +544,9 @@ include __DIR__ . '/partials/header.php';
     </section>
 </div>
 
-<script src="<?= e(app_base_path()) ?>/assets/ai-report.js" defer></script>
+<?php
+$aiReportScriptPath = __DIR__ . '/assets/ai-report.js';
+$aiReportScriptVersion = is_file($aiReportScriptPath) ? (string) filemtime($aiReportScriptPath) : '1';
+?>
+<script src="<?= e(app_base_path()) ?>/assets/ai-report.js?v=<?= e($aiReportScriptVersion) ?>" defer></script>
 <?php include __DIR__ . '/partials/footer.php'; ?>

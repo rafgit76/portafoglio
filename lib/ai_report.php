@@ -137,13 +137,14 @@ function ai_report_type_label(string $type, bool $compact = false): string
     return match ($type) {
         'custom' => $compact ? 'Personalizzato' : 'Report personalizzato',
         'changes' => 'Cosa e cambiato?',
+        'weekly_changes' => $compact ? 'Settimanale' : 'Cosa e cambiato settimanale?',
         default => $compact ? 'Complessivo' : 'Report complessivo',
     };
 }
 
 function ai_report_type_class(string $type): string
 {
-    return in_array($type, ['general', 'custom', 'changes'], true) ? $type : 'general';
+    return in_array($type, ['general', 'custom', 'changes', 'weekly_changes'], true) ? $type : 'general';
 }
 
 function ai_report_archive_generated(
@@ -232,7 +233,7 @@ function ai_report_import_legacy_cache(): ?array
 
 function ai_report_prompt_version(): string
 {
-    return '2026-07-22-gemini-3-5-medium-verified-v10';
+    return '2026-07-25-gemini-3-5-medium-weekly-v11';
 }
 
 function ai_report_build_payload(PDO $pdo): array
@@ -314,8 +315,71 @@ function ai_report_build_changes_payload(PDO $pdo): array
         throw new RuntimeException('Servono almeno 2 snapshot per analizzare cosa e cambiato.');
     }
 
-    $latestSnapshot = $snapshots[0];
-    $previousSnapshot = $snapshots[1];
+    return ai_report_build_changes_payload_from_snapshots($pdo, $snapshots[1], $snapshots[0], 'daily');
+}
+
+function ai_report_weekly_date_range(?DateTimeImmutable $today = null): array
+{
+    $today ??= new DateTimeImmutable('today');
+    if ($today->format('N') !== '6') {
+        throw new RuntimeException('Il confronto settimanale e disponibile esclusivamente il sabato.');
+    }
+
+    return [
+        'from' => $today->modify('-7 days')->format('Y-m-d'),
+        'to' => $today->format('Y-m-d'),
+    ];
+}
+
+function ai_report_build_weekly_changes_payload(PDO $pdo, ?DateTimeImmutable $today = null): array
+{
+    $dateRange = ai_report_weekly_date_range($today);
+    $previousDate = $dateRange['from'];
+    $latestDate = $dateRange['to'];
+    $stmt = $pdo->prepare(
+        'SELECT id, snapshot_date, total_market_value, total_cost_basis, total_unrealized_pnl, created_at
+         FROM pf_snapshots
+         WHERE snapshot_date IN (:previous_date, :latest_date)
+         ORDER BY snapshot_date DESC, id DESC'
+    );
+    $stmt->execute([
+        ':previous_date' => $previousDate,
+        ':latest_date' => $latestDate,
+    ]);
+
+    $snapshotsByDate = [];
+    foreach ($stmt->fetchAll() as $snapshot) {
+        $snapshotDate = substr((string) ($snapshot['snapshot_date'] ?? ''), 0, 10);
+        if ($snapshotDate !== '' && !isset($snapshotsByDate[$snapshotDate])) {
+            $snapshotsByDate[$snapshotDate] = $snapshot;
+        }
+    }
+
+    if (!isset($snapshotsByDate[$latestDate])) {
+        throw new RuntimeException(
+            'Carica prima lo snapshot di oggi, sabato ' . ai_report_format_date_it($latestDate) . '.'
+        );
+    }
+    if (!isset($snapshotsByDate[$previousDate])) {
+        throw new RuntimeException(
+            'Manca lo snapshot del sabato precedente, ' . ai_report_format_date_it($previousDate) . '.'
+        );
+    }
+
+    return ai_report_build_changes_payload_from_snapshots(
+        $pdo,
+        $snapshotsByDate[$previousDate],
+        $snapshotsByDate[$latestDate],
+        'weekly'
+    );
+}
+
+function ai_report_build_changes_payload_from_snapshots(
+    PDO $pdo,
+    array $previousSnapshot,
+    array $latestSnapshot,
+    string $comparisonKind
+): array {
     $previousSnapshotId = (int) $previousSnapshot['id'];
     $latestSnapshotId = (int) $latestSnapshot['id'];
 
@@ -366,6 +430,7 @@ function ai_report_build_changes_payload(PDO $pdo): array
 
     $payload = [
         'snapshots_count' => 2,
+        'comparison_kind' => $comparisonKind === 'weekly' ? 'weekly' : 'daily',
         'date_range' => [
             'from' => (string) $previousSnapshot['snapshot_date'],
             'to' => (string) $latestSnapshot['snapshot_date'],
@@ -611,6 +676,20 @@ function ai_report_generate_changes_with_gemini(array $historyPayload): array
     return ai_report_generate_request(
         ai_report_changes_system_instruction(),
         ai_report_build_changes_prompt($payloadJson, $verifiedFacts),
+        'changes',
+        $historyPayload,
+        $verifiedFacts
+    );
+}
+
+function ai_report_generate_weekly_changes_with_gemini(array $historyPayload): array
+{
+    $payloadJson = ai_report_encode_payload($historyPayload);
+    $verifiedFacts = ai_report_build_changes_verified_facts($historyPayload);
+
+    return ai_report_generate_request(
+        ai_report_changes_system_instruction('weekly'),
+        ai_report_build_changes_prompt($payloadJson, $verifiedFacts, 'weekly'),
         'changes',
         $historyPayload,
         $verifiedFacts
@@ -871,9 +950,13 @@ function ai_report_build_changes_verified_facts(array $historyPayload): string
         '- Posizioni nuove: ' . (int) ($summary['positions_added'] ?? 0),
         '- Posizioni non piu presenti: ' . (int) ($summary['positions_removed'] ?? 0),
         '- Posizioni con quantita variata: ' . (int) ($summary['quantity_changed'] ?? 0),
-        '',
-        'VARIAZIONI PER STRUMENTO VERIFICATE',
     ];
+    if (($historyPayload['comparison_kind'] ?? '') === 'weekly') {
+        $lines[] = '- Tipo di confronto: settimanale, da sabato a sabato.';
+        $lines[] = '- Intervallo di calendario: 7 giorni.';
+    }
+    $lines[] = '';
+    $lines[] = 'VARIAZIONI PER STRUMENTO VERIFICATE';
 
     $statusLabels = [
         'added' => 'nuova nello snapshot piu recente',
@@ -918,10 +1001,17 @@ function ai_report_build_changes_verified_facts(array $historyPayload): string
     return implode("\n", $lines);
 }
 
-function ai_report_changes_system_instruction(): string
+function ai_report_changes_system_instruction(string $comparisonKind = 'daily'): string
 {
+    $opening = $comparisonKind === 'weekly'
+        ? 'Sei un redattore di confronti settimanali tra due snapshot del sabato separati da 7 giorni.'
+        : 'Sei un redattore di confronti descrittivi tra due snapshot consecutivi di un portafoglio.';
+    $periodRule = $comparisonKind === 'weekly'
+        ? '- Confronta esclusivamente lo snapshot del sabato precedente e quello del sabato piu recente, citando le date esatte e specificando che l\'intervallo e di 7 giorni.'
+        : '- Confronta esclusivamente lo snapshot precedente e quello piu recente, citando le date esatte.';
+
     return <<<PROMPT
-Sei un redattore di confronti descrittivi tra due snapshot consecutivi di un portafoglio. Devi spiegare cosa e cambiato in modo chiaro, accurato e prudente. Non sei un consulente finanziario e non devi suggerire acquisti, vendite o strategie.
+{$opening} Devi spiegare cosa e cambiato in modo chiaro, accurato e prudente. Non sei un consulente finanziario e non devi suggerire acquisti, vendite o strategie.
 
 FONTI E NUMERI
 - Il blocco FATTI VERIFICATI DAL CODICE PHP e l'unica fonte autorizzata per cifre, date, importi, percentuali e variazioni.
@@ -936,7 +1026,7 @@ FONTI E NUMERI
 - Non affermare che il P/L o il controvalore riflettano, derivino o dipendano dalle dinamiche di prezzo: descrivi separatamente le variazioni verificate senza stabilire un rapporto causale.
 
 INTERPRETAZIONE
-- Confronta esclusivamente lo snapshot precedente e quello piu recente, citando le date esatte.
+{$periodRule}
 - Distingui i totali del portafoglio dalle variazioni dei singoli strumenti.
 - Evidenzia prima le variazioni assolute piu rilevanti di valore di mercato e P/L.
 - Segnala strumenti nuovi, rimossi o con quantita variata soltanto quando compaiono nei fatti verificati.
@@ -955,15 +1045,28 @@ STILE E CONTROLLO
 PROMPT;
 }
 
-function ai_report_build_changes_prompt(string $historyJson, string $verifiedFacts): string
-{
+function ai_report_build_changes_prompt(
+    string $historyJson,
+    string $verifiedFacts,
+    string $comparisonKind = 'daily'
+): string {
+    $request = $comparisonKind === 'weekly'
+        ? 'Spiega cosa e cambiato nella settimana compresa tra i due snapshot del sabato.'
+        : 'Spiega cosa e cambiato tra gli ultimi due snapshot del portafoglio.';
+    $summaryInstruction = $comparisonKind === 'weekly'
+        ? 'Massimo 70 parole. Riporta le due date, specifica che il confronto copre 7 giorni e descrivi soltanto il quadro complessivo.'
+        : 'Massimo 70 parole. Riporta le due date e descrivi soltanto il quadro complessivo.';
+    $jsonDescription = $comparisonKind === 'weekly'
+        ? 'JSON dei due snapshot del sabato confrontati, utilizzabile soltanto come contesto strutturale:'
+        : 'JSON dei soli due snapshot confrontati, utilizzabile soltanto come contesto strutturale:';
+
     return <<<PROMPT
-Spiega cosa e cambiato tra gli ultimi due snapshot del portafoglio.
+{$request}
 
 Struttura obbligatoria, nello stesso ordine. Privilegia tabelle e frasi brevi; non creare lunghi paragrafi.
 
 ### In sintesi
-Massimo 70 parole. Riporta le due date e descrivi soltanto il quadro complessivo.
+{$summaryInstruction}
 
 ### Totali del portafoglio
 Scrivi una frase introduttiva di massimo 30 parole, poi questa tabella usando esclusivamente le cifre verificate:
@@ -998,7 +1101,7 @@ FATTI VERIFICATI DAL CODICE PHP:
 {$verifiedFacts}
 ```
 
-JSON dei soli due snapshot confrontati, utilizzabile soltanto come contesto strutturale:
+{$jsonDescription}
 ```json
 {$historyJson}
 ```

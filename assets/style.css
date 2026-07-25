@@ -1314,6 +1314,12 @@ tbody tr.snapshot-row-min:hover {
     background: #fff0f1;
 }
 
+.ai-status-scheduled {
+    color: #405c6b;
+    border-color: #bfd0d9;
+    background: #f1f6f8;
+}
+
 .ai-service-cards .card {
     min-height: 128px;
 }
@@ -1582,6 +1588,12 @@ tbody tr.snapshot-row-min:hover {
     color: #00636a;
     border-color: #a7d7da;
     background: #ebf8f8;
+}
+
+.ai-type-weekly_changes {
+    color: #4d4b85;
+    border-color: #c9c7e4;
+    background: #f3f2fb;
 }
 
 .ai-open-link {

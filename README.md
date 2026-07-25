@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `1.7.0`
+Versione corrente: `1.8.0`
 
 ## Deploy (FTP)
 
@@ -58,7 +58,7 @@ In `config/config.local.php` puoi regolare:
 - `snapshot.php?id=...`: dettaglio snapshot
 - `assets.php`: anagrafica strumenti
 - `asset.php?id=...`: dettaglio storico di un singolo titolo
-- `ai_report.php`: Centro AI, confronto Cosa e cambiato?, generazione esplicita e archivio report
+- `ai_report.php`: Centro AI, confronti giornaliero e settimanale, generazione esplicita e archivio report
 - `ai_report_view.php`: dettaglio e stampa di un report AI archiviato
 - `changelog.php`: storico versioni applicative
 
@@ -72,7 +72,7 @@ Lo sblocco scade dopo 30 minuti di inattivita. Dopo 10 tentativi errati dallo st
 
 ## Report AI
 
-La pagina `Report AI` e un centro operativo che usa Gemini lato server per generare report sullo storico degli snapshot. La funzione `Cosa e cambiato?` confronta soltanto gli ultimi due snapshot: l'anteprima e calcolata gratuitamente da PHP, mentre la spiegazione AI parte solo dopo conferma. La semplice apertura della pagina non esegue chiamate API: ogni generazione richiede un'azione e una conferma esplicite. Durante l'elaborazione viene mostrato un overlay con avanzamento stimato, stato finale ed eventuali errori.
+La pagina `Report AI` e un centro operativo che usa Gemini lato server per generare report sullo storico degli snapshot. La funzione `Cosa e cambiato?` confronta soltanto gli ultimi due snapshot. Il confronto settimanale e disponibile esclusivamente il sabato e usa le rilevazioni con data esatta del sabato corrente e del sabato precedente, distanti sette giorni. Le anteprime sono calcolate gratuitamente da PHP, mentre la spiegazione AI parte solo dopo conferma. La semplice apertura della pagina non esegue chiamate API: ogni generazione richiede un'azione e una conferma esplicite. Durante l'elaborazione viene mostrato un overlay con avanzamento stimato, stato finale ed eventuali errori.
 Configura la chiave solo in `config/config.local.php` o tramite `PORTFOLIO_GEMINI_API_KEY`.
 Il modello predefinito e' `gemini-3.5-flash-lite`, configurabile con `PORTFOLIO_GEMINI_MODEL`.
 Il livello di ragionamento predefinito e' `medium`, configurabile con `PORTFOLIO_GEMINI_THINKING_LEVEL`.
