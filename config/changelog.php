@@ -2,6 +2,23 @@
 
 return [
     [
+        'version' => '1.9.0',
+        'date' => '2026-07-30',
+        'title' => 'Modulo Trimestrali',
+        'changes' => [
+            'Aggiunta la pagina Trimestrali con calendario delle pubblicazioni, distinzione tra date confermate e stimate e ordinamento per rilevanza nel portafoglio.',
+            'Aggiunto un archivio degli eventi societari collegato ai titoli azionari presenti nell\'anagrafica.',
+            'Aggiunto il calcolo deterministico dell\'impatto tra gli snapshot prima e dopo la pubblicazione, con rendimento della posizione, contributo al portafoglio e variazione del peso.',
+            'Corretta la finestra degli eventi dopo la chiusura: lo snapshot del mattino successivo resta il riferimento pre-evento e l\'impatto usa la chiusura della prima seduta completa di reazione.',
+            'Corretta la visualizzazione percentuale del peso dei titoli e del relativo delta nel modulo Trimestrali.',
+            'Neutralizzate nel calcolo di impatto le variazioni di quantita usando il valore unitario in EUR applicato alla posizione precedente.',
+            'Aggiunta la generazione esplicita di report Gemini basati esclusivamente su un URL ufficiale recuperato tramite URL Context.',
+            'Rifiutato il salvataggio del report quando Gemini non recupera la fonte o omette una delle sezioni obbligatorie.',
+            'Archiviati modello, token, costo stimato e data di generazione insieme al report della trimestrale.',
+            'Aggiunta la migrazione SQL migration_1_9_0_earnings.sql per inizializzare il modulo su database esistenti.',
+        ],
+    ],
+    [
         'version' => '1.8.0',
         'date' => '2026-07-25',
         'title' => 'Cosa e cambiato settimanale?',

@@ -1301,7 +1301,8 @@ function ai_report_gemini_request(
     string $prompt,
     string $thinkingLevel,
     int $maxOutputTokens,
-    int $timeoutSeconds
+    int $timeoutSeconds,
+    array $tools = []
 ): array
 {
     $allowedThinkingLevels = ['minimal', 'low', 'medium', 'high'];
@@ -1332,6 +1333,10 @@ function ai_report_gemini_request(
             ],
         ],
     ];
+
+    if ($tools !== []) {
+        $body['tools'] = $tools;
+    }
 
     $jsonBody = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (!is_string($jsonBody)) {
@@ -1422,7 +1427,8 @@ function ai_report_decode_gemini_response(string $raw, int $httpCode): array
         'decoded' => $decoded,
         'http_code' => $httpCode,
         'finish_reason' => (string) ($decoded['candidates'][0]['finishReason'] ?? ''),
-        'prompt_tokens' => (int) ($usage['promptTokenCount'] ?? 0),
+        'prompt_tokens' => (int) ($usage['promptTokenCount'] ?? 0)
+            + (int) ($usage['toolUsePromptTokenCount'] ?? 0),
         'output_tokens' => (int) ($usage['candidatesTokenCount'] ?? 0),
         'thinking_tokens' => (int) ($usage['thoughtsTokenCount'] ?? 0),
         'total_tokens' => (int) ($usage['totalTokenCount'] ?? 0),

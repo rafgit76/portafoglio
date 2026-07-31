@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `1.8.0`
+Versione corrente: `1.9.0`
 
 ## Deploy (FTP)
 
@@ -39,6 +39,7 @@ Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto,
 - libreria Chart.js servita localmente da `assets/vendor/` senza dipendenza CDN runtime
 - home pubblica priva di importi e pagine operative protette da PIN privacy
 - blocco di 15 minuti dopo 10 tentativi errati e scadenza dello sblocco dopo 30 minuti di inattivita
+- report delle trimestrali vincolati a una fonte HTTPS ufficiale recuperata con Gemini URL Context
 
 ## Opzioni esterne
 
@@ -58,6 +59,8 @@ In `config/config.local.php` puoi regolare:
 - `snapshot.php?id=...`: dettaglio snapshot
 - `assets.php`: anagrafica strumenti
 - `asset.php?id=...`: dettaglio storico di un singolo titolo
+- `earnings.php`: calendario, titoli significativi e archivio delle trimestrali
+- `earnings_event.php?id=...`: dettaglio evento, impatto sugli snapshot e report Gemini
 - `ai_report.php`: Centro AI, confronti giornaliero e settimanale, generazione esplicita e archivio report
 - `ai_report_view.php`: dettaglio e stampa di un report AI archiviato
 - `changelog.php`: storico versioni applicative
@@ -81,6 +84,14 @@ La system instruction impone la semantica dei dati Fineco, il divieto di introdu
 I report troncati, fuori dai limiti di lunghezza, privi delle sezioni richieste o incoerenti con i principali valori verificati non vengono archiviati. Se la prima bozza non supera i controlli, l'app effettua al massimo un secondo tentativo correttivo e conteggia i token di entrambe le chiamate.
 Sono disponibili un report complessivo guidato dal prompt madre e report personalizzati basati su una richiesta libera. Ogni risultato mostra token utilizzati e costo API stimato secondo le tariffe configurate nel codice.
 I report vengono salvati come JSON protetti in `storage/ai_reports`, esclusi da Git e dai pacchetti FTP. Durante il deploy non eliminare questa cartella sul server se vuoi conservare lo storico. La vecchia cache `storage/ai_report_cache.json`, se presente, viene importata una sola volta nel nuovo archivio.
+
+## Trimestrali
+
+Il modulo `Trimestrali` collega gli eventi societari ai titoli di tipo `AZIONE`. Le date vengono inserite come confermate o stimate e la fonte ufficiale puo essere aggiunta quando il comunicato e disponibile. Il report Gemini parte solo dopo conferma, usa URL Context e viene archiviato soltanto se la fonte risulta recuperata.
+
+L'impatto e calcolato da PHP confrontando gli snapshot utili prima e dopo l'annuncio. Poiche gli snapshot Fineco importati al mattino riportano la chiusura della sera precedente, per una pubblicazione dopo la chiusura il primo snapshot successivo resta il riferimento pre-evento e quello seguente misura la prima seduta completa di reazione. Per limitare l'effetto di acquisti o vendite nella finestra, la variazione del valore unitario in EUR viene applicata alla quantita precedente. Il risultato comprende comunque l'effetto del cambio incorporato nei controvalori Fineco e non costituisce una misura causale perfetta.
+
+Su un database gia esistente importa una sola volta `sql/migration_1_9_0_earnings.sql`. Le nuove installazioni possono continuare a usare `sql/schema.sql`.
 
 ## Versioning
 

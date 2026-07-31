@@ -217,6 +217,9 @@ include __DIR__ . '/partials/header.php';
         <div class="asset-actions">
             <a class="btn btn-secondary" href="<?= e(app_base_path()) ?>/assets.php">Torna agli strumenti</a>
             <a class="btn btn-secondary" href="<?= e(app_base_path()) ?>/andamento.php">Andamento</a>
+            <?php if ((string) ($asset['asset_type'] ?? '') === 'AZIONE'): ?>
+                <a class="btn btn-secondary" href="<?= e(app_base_path()) ?>/earnings.php?asset_id=<?= (int) $assetId ?>#nuova-trimestrale">Trimestrali</a>
+            <?php endif; ?>
         </div>
     </div>
 </section>

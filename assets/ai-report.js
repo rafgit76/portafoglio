@@ -12,7 +12,7 @@
     const percent = document.getElementById('ai-generation-percent');
     const closeButton = document.getElementById('ai-generation-close');
     const forms = document.querySelectorAll(
-        '#general-report-form, #custom-report-form, #changes-report-form, #weekly-changes-report-form'
+        '#general-report-form, #custom-report-form, #changes-report-form, #weekly-changes-report-form, #earnings-report-form'
     );
 
     if (!overlay || !dialog || !indicator || !title || !message || !progress || !progressBar || !phase || !percent || !closeButton || forms.length === 0 || !window.fetch) {
@@ -48,7 +48,9 @@
     const openOverlay = (action) => {
         dialog.classList.remove('is-success', 'is-error');
         indicator.classList.remove('is-success', 'is-error');
-        if (action === 'generate_custom') {
+        if (action === 'generate_earnings') {
+            title.textContent = 'Analisi della trimestrale';
+        } else if (action === 'generate_custom') {
             title.textContent = 'Generazione del report personalizzato';
         } else if (action === 'generate_weekly_changes') {
             title.textContent = 'Analisi della settimana';
@@ -57,7 +59,9 @@
         } else {
             title.textContent = 'Generazione del report in corso';
         }
-        if (action === 'generate_weekly_changes') {
+        if (action === 'generate_earnings') {
+            message.textContent = 'Gemini sta recuperando la fonte ufficiale, analizzando i risultati e collegandoli agli snapshot.';
+        } else if (action === 'generate_weekly_changes') {
             message.textContent = 'Gemini sta confrontando i due snapshot del sabato e verificando le variazioni della settimana.';
         } else if (action === 'generate_changes') {
             message.textContent = 'Gemini sta confrontando gli ultimi due snapshot e verificando le variazioni.';

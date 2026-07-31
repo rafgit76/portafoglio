@@ -187,6 +187,8 @@ function privacy_safe_return_path(?string $path): string
         'compare.php',
         'assets.php',
         'asset.php',
+        'earnings.php',
+        'earnings_event.php',
         'ai_report.php',
         'ai_report_view.php',
     ];

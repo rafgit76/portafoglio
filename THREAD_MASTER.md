@@ -5,7 +5,7 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `1.8.0`
+- `1.9.0`
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto
@@ -48,6 +48,7 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - dettaglio snapshot
 - confronto tra snapshot
 - anagrafica e composizione strumenti
+- calendario e archivio delle trimestrali con impatto sugli snapshot
 - dati accessori live come EUR/USD e news
 
 ## Architettura applicativa
@@ -62,6 +63,8 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - `compare.php`: confronto snapshot e export CSV
 - `assets.php`: anagrafica strumenti e composizione portafoglio
 - `asset.php`: dettaglio storico del singolo titolo
+- `earnings.php`: calendario, titoli significativi e archivio trimestrali
+- `earnings_event.php`: dettaglio evento, impatto deterministico e report Gemini da fonte ufficiale
 - `ai_report.php`: Centro AI con confronti giornaliero e settimanale, generazione esplicita, report personalizzati e archivio
 - `ai_report_view.php`: dettaglio e stampa dei report AI archiviati
 - `changelog.php`: storico versioni applicative
@@ -76,6 +79,7 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - `lib/xlsx_reader.php`: fallback XLSX custom senza Composer
 - `lib/fx.php`: recupero e cache EUR/USD da ECB
 - `lib/news.php`: recupero e ranking news con cache locale
+- `lib/earnings.php`: gestione eventi, calcolo impatto con semantica degli snapshot Fineco mattutini e generazione dei report trimestrali
 
 ### View/layout
 
@@ -93,6 +97,7 @@ Tabelle realmente usate dall'app:
 - `pf_assets`
 - `pf_snapshot_positions`
 - `pf_import_jobs`
+- `pf_earnings_events`
 
 Tabelle predisposte ma non ancora esposte nella UI:
 - `pf_expected_cashflows`
