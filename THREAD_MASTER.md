@@ -5,7 +5,7 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `1.9.0`
+- `2.0.0`
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto
@@ -47,7 +47,7 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - storico snapshot
 - dettaglio snapshot
 - confronto tra snapshot
-- anagrafica e composizione strumenti
+- composizione, diversificazione e anagrafica strumenti
 - calendario e archivio delle trimestrali con impatto sugli snapshot
 - dati accessori live come EUR/USD e news
 
@@ -61,7 +61,7 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - `snapshots.php`: storico snapshot con eliminazione
 - `snapshot.php`: dettaglio di un singolo snapshot
 - `compare.php`: confronto snapshot e export CSV
-- `assets.php`: anagrafica strumenti e composizione portafoglio
+- `assets.php`: composizione per categoria, diversificazione territoriale e settoriale, concentrazione, fonti e anagrafica strumenti
 - `asset.php`: dettaglio storico del singolo titolo
 - `earnings.php`: calendario, titoli significativi e archivio trimestrali
 - `earnings_event.php`: dettaglio evento, impatto deterministico e report Gemini da fonte ufficiale
@@ -80,6 +80,7 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - `lib/fx.php`: recupero e cache EUR/USD da ECB
 - `lib/news.php`: recupero e ranking news con cache locale
 - `lib/earnings.php`: gestione eventi, calcolo impatto con semantica degli snapshot Fineco mattutini e generazione dei report trimestrali
+- `lib/diversification.php`: aggregazione dell’ultimo snapshot con classificazioni territoriali e settoriali
 
 ### View/layout
 
@@ -98,6 +99,9 @@ Tabelle realmente usate dall'app:
 - `pf_snapshot_positions`
 - `pf_import_jobs`
 - `pf_earnings_events`
+
+Classificazioni versionate fuori dal database:
+- `config/asset_classifications.php`: profili per ISIN, fonti, date e pesi look-through o classificazioni dichiarate
 
 Tabelle predisposte ma non ancora esposte nella UI:
 - `pf_expected_cashflows`
@@ -239,6 +243,7 @@ Nota funzionale:
 - storico e confronto snapshot ben pensati
 - grafici e UI gia maturi per uso reale
 - separazione accettabile tra logica, layout e accesso dati
+- classificazioni di diversificazione tracciabili a fonti e date, senza dipendenza da feed finanziari runtime
 
 ## Backlog consigliato
 

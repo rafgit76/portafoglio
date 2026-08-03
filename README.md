@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `1.9.0`
+Versione corrente: `2.0.0`
 
 ## Deploy (FTP)
 
@@ -57,7 +57,7 @@ In `config/config.local.php` puoi regolare:
 - `upload.php`: import diretto file Fineco `.xls`/`.xlsx` e conversione opzionale in `.xlsx`
 - `snapshots.php`: storico snapshot
 - `snapshot.php?id=...`: dettaglio snapshot
-- `assets.php`: anagrafica strumenti
+- `assets.php`: composizione, diversificazione, fonti e anagrafica strumenti
 - `asset.php?id=...`: dettaglio storico di un singolo titolo
 - `earnings.php`: calendario, titoli significativi e archivio delle trimestrali
 - `earnings_event.php?id=...`: dettaglio evento, impatto sugli snapshot e report Gemini
@@ -92,6 +92,14 @@ Il modulo `Trimestrali` collega gli eventi societari ai titoli di tipo `AZIONE`.
 L'impatto e calcolato da PHP confrontando gli snapshot utili prima e dopo l'annuncio. Poiche gli snapshot Fineco importati al mattino riportano la chiusura della sera precedente, per una pubblicazione dopo la chiusura il primo snapshot successivo resta il riferimento pre-evento e quello seguente misura la prima seduta completa di reazione. Per limitare l'effetto di acquisti o vendite nella finestra, la variazione del valore unitario in EUR viene applicata alla quantita precedente. Il risultato comprende comunque l'effetto del cambio incorporato nei controvalori Fineco e non costituisce una misura causale perfetta.
 
 Su un database gia esistente importa una sola volta `sql/migration_1_9_0_earnings.sql`. Le nuove installazioni possono continuare a usare `sql/schema.sql`.
+
+## Strumenti e diversificazione
+
+La pagina `Strumenti` parte sempre dall’ultimo snapshot Fineco disponibile: valori, pesi, concentrazione e valute di negoziazione sono calcolati direttamente dalle posizioni importate.
+
+Le classificazioni territoriali e settoriali sono nel file versionato `config/asset_classifications.php`, associato agli ISIN e corredato da fonte, data di riferimento e metodo. Per i fondi con factsheet analizzabile sono usati i pesi look-through disponibili; dove la fonte non espone una ripartizione completa, l’app mostra una classificazione dello strumento o del suo mandato e lo dichiara nella tabella Fonti e metodo. La pagina non usa soglie, giudizi o raccomandazioni automatiche.
+
+Quando cambia in modo significativo la composizione di un fondo, aggiorna il relativo profilo nel catalogo e la data della fonte: gli importi visualizzati continueranno a essere ricalcolati dallo snapshot piu recente senza modifiche al database.
 
 ## Versioning
 

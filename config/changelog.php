@@ -2,6 +2,19 @@
 
 return [
     [
+        'version' => '2.0.0',
+        'date' => '2026-08-03',
+        'title' => 'Strumenti e diversificazione',
+        'changes' => [
+            'Riprogettata la pagina Strumenti come cruscotto di composizione costruito sull’ultimo snapshot Fineco.',
+            'Aggiunte ripartizioni territoriali ed esposizioni settoriali per azioni, BTP, ETF e fondi presenti nel portafoglio.',
+            'Aggiunta la distinzione esplicita tra dati look-through dei factsheet e classificazioni per tipologia o mandato dello strumento.',
+            'Aggiunte composizione per categoria, valute di negoziazione, concentrazione delle prime posizioni e collegamenti ai dettagli dei titoli.',
+            'Aggiunto il catalogo versionato delle fonti e delle date di riferimento per ogni classificazione, senza nuove dipendenze runtime o migrazioni database.',
+            'Mantenuta una vista soltanto descrittiva: nessuna soglia, voto, allarme o raccomandazione automatica.',
+        ],
+    ],
+    [
         'version' => '1.9.0',
         'date' => '2026-07-30',
         'title' => 'Modulo Trimestrali',
