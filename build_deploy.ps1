@@ -51,12 +51,4 @@ if ($exitCode -ge 8) {
     throw "Robocopy ha restituito un errore: $exitCode"
 }
 
-$uploadsDir = Join-Path $destination 'storage\uploads'
-New-Item -ItemType Directory -Force -Path $uploadsDir | Out-Null
-New-Item -ItemType File -Force -Path (Join-Path $uploadsDir '.gitkeep') | Out-Null
-
-$aiReportsDir = Join-Path $destination 'storage\ai_reports'
-New-Item -ItemType Directory -Force -Path $aiReportsDir | Out-Null
-New-Item -ItemType File -Force -Path (Join-Path $aiReportsDir '.gitkeep') | Out-Null
-
 Write-Host "Cartella FTP pronta: $destination"

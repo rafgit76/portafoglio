@@ -5,7 +5,7 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `2.0.0`
+- `2.1.0`
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto
@@ -172,6 +172,9 @@ Cartelle con scrittura richiesta:
 - `storage/ai_reports` per l'archivio privato dei report AI
 - `storage/` per il registro dei tentativi PIN
 - `storage/` per cache news e FX
+
+Regola di deploy:
+- i pacchetti FTP non devono contenere o ricreare `storage/uploads` e `storage/ai_reports`; sul server queste cartelle non vanno mai eliminate o sincronizzate in modo distruttivo, per conservare gli upload e l'archivio report.
 
 ## Stato tecnico rilevato
 

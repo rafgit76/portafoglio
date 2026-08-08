@@ -643,6 +643,46 @@ button:hover,
     min-width: 1080px;
 }
 
+.snapshots-toolbar,
+.snapshots-pagination,
+.snapshot-page-size {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.snapshots-toolbar {
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+
+.snapshot-page-size {
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
+.snapshot-page-size select {
+    min-width: 82px;
+    padding: 0.42rem 0.65rem;
+    border-radius: 8px;
+}
+
+.snapshots-page-count {
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.snapshots-pagination .is-disabled {
+    cursor: default;
+    opacity: 0.45;
+}
+
+.snapshots-pagination-bottom {
+    justify-content: flex-end;
+    margin-top: 0.75rem;
+}
+
 .snapshot-file-cell {
     max-width: 270px;
     overflow: hidden;

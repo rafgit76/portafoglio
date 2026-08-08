@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.0.0`
+Versione corrente: `2.1.0`
 
 ## Deploy (FTP)
 
@@ -23,7 +23,9 @@ Per creare una cartella FTP completa e pulita puoi eseguire:
 
 `.\build_deploy.ps1`
 
-Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto, includendo `vendor/` e la configurazione locale se presente, ma lasciando fuori `.git`, file di sviluppo, cache e upload storici.
+Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto, includendo `vendor/` e la configurazione locale se presente, ma lasciando fuori `.git`, file di sviluppo, cache, upload storici e archivio dei report AI. Le cartelle `storage/uploads` e `storage/ai_reports` non sono nemmeno ricreate vuote nel pacchetto.
+
+Durante l'upload con FileZilla, trasferisci i file del pacchetto nella cartella dell'app senza eliminare o sincronizzare in modo distruttivo `storage/` sul server. Le cartelle di storage vengono create automaticamente dall'app alla prima necessita.
 
 `config/config.php` non contiene segreti: legge variabili ambiente `PORTFOLIO_DB_*` oppure il file locale `config/config.local.php`, escluso da Git.
 
@@ -55,7 +57,7 @@ In `config/config.local.php` puoi regolare:
 - `index.php`: home privacy senza dati economici e sblocco con PIN
 - `dashboard.php`: dashboard completa del portafoglio
 - `upload.php`: import diretto file Fineco `.xls`/`.xlsx` e conversione opzionale in `.xlsx`
-- `snapshots.php`: storico snapshot
+- `snapshots.php`: storico snapshot paginato, con massimo/minimo P/L evidenziati sull'intero archivio
 - `snapshot.php?id=...`: dettaglio snapshot
 - `assets.php`: composizione, diversificazione, fonti e anagrafica strumenti
 - `asset.php?id=...`: dettaglio storico di un singolo titolo
@@ -83,7 +85,7 @@ Il budget massimo predefinito e' di 20000 token, configurabile con `PORTFOLIO_GE
 La system instruction impone la semantica dei dati Fineco, il divieto di introdurre cause esterne e l'uso esclusivo di un blocco di fatti numerici verificati e formattati da PHP.
 I report troncati, fuori dai limiti di lunghezza, privi delle sezioni richieste o incoerenti con i principali valori verificati non vengono archiviati. Se la prima bozza non supera i controlli, l'app effettua al massimo un secondo tentativo correttivo e conteggia i token di entrambe le chiamate.
 Sono disponibili un report complessivo guidato dal prompt madre e report personalizzati basati su una richiesta libera. Ogni risultato mostra token utilizzati e costo API stimato secondo le tariffe configurate nel codice.
-I report vengono salvati come JSON protetti in `storage/ai_reports`, esclusi da Git e dai pacchetti FTP. Durante il deploy non eliminare questa cartella sul server se vuoi conservare lo storico. La vecchia cache `storage/ai_report_cache.json`, se presente, viene importata una sola volta nel nuovo archivio.
+I report vengono salvati come JSON protetti in `storage/ai_reports`, esclusi da Git e dai pacchetti FTP. Non esiste una scadenza o pulizia automatica: restano archiviati finche la relativa cartella sul server non viene eliminata. Durante il deploy non eliminare o sincronizzare in modo distruttivo questa cartella. La vecchia cache `storage/ai_report_cache.json`, se presente, viene importata una sola volta nel nuovo archivio.
 
 ## Trimestrali
 

@@ -3,6 +3,19 @@ require_once __DIR__ . '/bootstrap.php';
 
 $pageTitle = 'Snapshot';
 $pdo = db();
+$pageSizeOptions = [25, 50, 100];
+$pageSize = (int) ($_GET['per_page'] ?? 25);
+if (!in_array($pageSize, $pageSizeOptions, true)) {
+    $pageSize = 25;
+}
+
+$requestedPage = max(1, (int) ($_GET['page'] ?? 1));
+$snapshotListUrl = static function (int $page, int $perPage): string {
+    return app_base_path() . '/snapshots.php?' . http_build_query([
+        'page' => max(1, $page),
+        'per_page' => $perPage,
+    ]);
+};
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_snapshot') {
     $token = $_POST['csrf_token'] ?? null;
@@ -26,34 +39,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
         set_flash('error', 'Snapshot non trovato.');
     }
 
-    redirect('/snapshots.php');
+    $returnPage = max(1, (int) ($_POST['return_page'] ?? 1));
+    $returnPerPage = (int) ($_POST['return_per_page'] ?? 25);
+    if (!in_array($returnPerPage, $pageSizeOptions, true)) {
+        $returnPerPage = 25;
+    }
+    redirect('/snapshots.php?' . http_build_query([
+        'page' => $returnPage,
+        'per_page' => $returnPerPage,
+    ]));
 }
 
-$rows = $pdo->query('SELECT id, snapshot_date, source_file_name, total_cost_basis, total_market_value, total_unrealized_pnl, created_at FROM pf_snapshots ORDER BY snapshot_date DESC, id DESC')->fetchAll();
+$totalSnapshots = (int) $pdo->query('SELECT COUNT(*) FROM pf_snapshots')->fetchColumn();
+$totalPages = max(1, (int) ceil($totalSnapshots / $pageSize));
+$currentPage = min($requestedPage, $totalPages);
+$offset = ($currentPage - 1) * $pageSize;
 
-$maxPnl = null;
-$minPnl = null;
-foreach ($rows as $row) {
-    $pnl = (float) $row['total_unrealized_pnl'];
-    if ($maxPnl === null || $pnl > $maxPnl) {
-        $maxPnl = $pnl;
-    }
-    if ($minPnl === null || $pnl < $minPnl) {
-        $minPnl = $pnl;
-    }
-}
+$extremes = $pdo->query(
+    'SELECT MAX(total_unrealized_pnl) AS max_pnl, MIN(total_unrealized_pnl) AS min_pnl FROM pf_snapshots'
+)->fetch();
+$maxPnl = $extremes['max_pnl'] !== null ? (float) $extremes['max_pnl'] : null;
+$minPnl = $extremes['min_pnl'] !== null ? (float) $extremes['min_pnl'] : null;
+
+$rowsQuery = $pdo->prepare(
+    'SELECT id, snapshot_date, source_file_name, total_cost_basis, total_market_value, total_unrealized_pnl, created_at
+     FROM pf_snapshots
+     ORDER BY snapshot_date DESC, id DESC
+     LIMIT :limit OFFSET :offset'
+);
+$rowsQuery->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+$rowsQuery->bindValue(':offset', $offset, PDO::PARAM_INT);
+$rowsQuery->execute();
+$rows = $rowsQuery->fetchAll();
+
+$firstRow = $totalSnapshots === 0 ? 0 : $offset + 1;
+$lastRow = min($totalSnapshots, $offset + count($rows));
 
 include __DIR__ . '/partials/header.php';
 ?>
 <section class="panel">
     <div class="panel-head">
-        <h2>Storico snapshot</h2>
+        <div>
+            <h2>Storico snapshot</h2>
+            <?php if ($totalSnapshots > 0): ?>
+                <p class="tiny-note">Visualizzati <?= $firstRow ?>-<?= $lastRow ?> di <?= $totalSnapshots ?> snapshot.</p>
+            <?php endif; ?>
+        </div>
         <a class="btn" href="<?= e(app_base_path()) ?>/upload.php">Nuovo upload</a>
     </div>
 
     <?php if (!$rows): ?>
         <p>Nessuno snapshot disponibile.</p>
     <?php else: ?>
+    <div class="snapshots-toolbar">
+        <form method="get" class="snapshot-page-size">
+            <input type="hidden" name="page" value="1">
+            <label for="snapshotPageSize">Righe</label>
+            <select id="snapshotPageSize" name="per_page" onchange="this.form.submit()">
+                <?php foreach ($pageSizeOptions as $option): ?>
+                    <option value="<?= $option ?>"<?= $pageSize === $option ? ' selected' : '' ?>><?= $option ?></option>
+                <?php endforeach; ?>
+            </select>
+        </form>
+        <?php if ($totalPages > 1): ?>
+            <nav class="snapshots-pagination" aria-label="Paginazione snapshot">
+                <?php if ($currentPage > 1): ?>
+                    <a class="btn-secondary btn-sm" href="<?= e($snapshotListUrl($currentPage - 1, $pageSize)) ?>">Indietro</a>
+                <?php else: ?>
+                    <span class="btn-secondary btn-sm is-disabled" aria-disabled="true">Indietro</span>
+                <?php endif; ?>
+                <span class="snapshots-page-count">Pagina <?= $currentPage ?>/<?= $totalPages ?></span>
+                <?php if ($currentPage < $totalPages): ?>
+                    <a class="btn-secondary btn-sm" href="<?= e($snapshotListUrl($currentPage + 1, $pageSize)) ?>">Avanti</a>
+                <?php else: ?>
+                    <span class="btn-secondary btn-sm is-disabled" aria-disabled="true">Avanti</span>
+                <?php endif; ?>
+            </nav>
+        <?php endif; ?>
+    </div>
+    <div class="table-wrap snapshots-table-wrap">
     <table class="snapshots-table">
         <thead>
             <tr>
@@ -94,6 +158,8 @@ include __DIR__ . '/partials/header.php';
                         <form method="post" onsubmit="return confirm('Confermi eliminazione snapshot <?= e($r['snapshot_date']) ?>?');">
                             <input type="hidden" name="action" value="delete_snapshot">
                             <input type="hidden" name="snapshot_id" value="<?= (int) $r['id'] ?>">
+                            <input type="hidden" name="return_page" value="<?= $currentPage ?>">
+                            <input type="hidden" name="return_per_page" value="<?= $pageSize ?>">
                             <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                             <button type="submit" class="btn-danger btn-sm">Elimina</button>
                         </form>
@@ -103,6 +169,22 @@ include __DIR__ . '/partials/header.php';
             <?php endforeach; ?>
         </tbody>
     </table>
+    </div>
+    <?php if ($totalPages > 1): ?>
+        <nav class="snapshots-pagination snapshots-pagination-bottom" aria-label="Paginazione snapshot">
+            <?php if ($currentPage > 1): ?>
+                <a class="btn-secondary btn-sm" href="<?= e($snapshotListUrl($currentPage - 1, $pageSize)) ?>">Indietro</a>
+            <?php else: ?>
+                <span class="btn-secondary btn-sm is-disabled" aria-disabled="true">Indietro</span>
+            <?php endif; ?>
+            <span class="snapshots-page-count">Pagina <?= $currentPage ?>/<?= $totalPages ?></span>
+            <?php if ($currentPage < $totalPages): ?>
+                <a class="btn-secondary btn-sm" href="<?= e($snapshotListUrl($currentPage + 1, $pageSize)) ?>">Avanti</a>
+            <?php else: ?>
+                <span class="btn-secondary btn-sm is-disabled" aria-disabled="true">Avanti</span>
+            <?php endif; ?>
+        </nav>
+    <?php endif; ?>
     <?php endif; ?>
 </section>
 <?php include __DIR__ . '/partials/footer.php'; ?>

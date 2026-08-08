@@ -2,6 +2,18 @@
 
 return [
     [
+        'version' => '2.1.0',
+        'date' => '2026-08-08',
+        'title' => 'Snapshot piu navigabili e deploy protetto',
+        'changes' => [
+            'Corretto il generatore dei pacchetti FTP: le cartelle storage/ai_reports e storage/uploads non vengono piu ricreate vuote nel pacchetto.',
+            'Gli archivi dei report AI e gli upload storici gia presenti su Aruba restano quindi fuori dal perimetro del deploy.',
+            'Aggiornata la documentazione con la procedura FTP che non elimina o sincronizza in modo distruttivo le cartelle storage del server.',
+            'Aggiunta la paginazione nello storico Snapshot con selettore da 25, 50 o 100 righe e navigazione tra le pagine.',
+            'Mantenute le evidenziazioni di massimo e minimo P/L calcolate sull’intero archivio, anche quando la riga e su un’altra pagina.',
+        ],
+    ],
+    [
         'version' => '2.0.0',
         'date' => '2026-08-03',
         'title' => 'Strumenti e diversificazione',

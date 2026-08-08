@@ -12,7 +12,7 @@ return [
         'base_path' => '/apps/portafoglio',
         'default_currency' => 'EUR',
         'target_php_version' => '8.4',
-        'app_version' => '1.9.0',
+        'app_version' => '2.1.0',
         'public_app_name' => 'Portfolio Investimenti',
         'timezone' => 'Europe/Rome',
         'upload_max_size_mb' => 10,
