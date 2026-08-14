@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.1.0`
+Versione corrente: `2.1.2`
 
 ## Deploy (FTP)
 
@@ -79,7 +79,7 @@ Lo sblocco scade dopo 30 minuti di inattivita. Dopo 10 tentativi errati dallo st
 
 La pagina `Report AI` e un centro operativo che usa Gemini lato server per generare report sullo storico degli snapshot. La funzione `Cosa e cambiato?` confronta soltanto gli ultimi due snapshot. Il confronto settimanale e disponibile esclusivamente il sabato e usa le rilevazioni con data esatta del sabato corrente e del sabato precedente, distanti sette giorni. Le anteprime sono calcolate gratuitamente da PHP, mentre la spiegazione AI parte solo dopo conferma. La semplice apertura della pagina non esegue chiamate API: ogni generazione richiede un'azione e una conferma esplicite. Durante l'elaborazione viene mostrato un overlay con avanzamento stimato, stato finale ed eventuali errori.
 Configura la chiave solo in `config/config.local.php` o tramite `PORTFOLIO_GEMINI_API_KEY`.
-Il modello predefinito e' `gemini-3.5-flash-lite`, configurabile con `PORTFOLIO_GEMINI_MODEL`.
+Il modello predefinito e' `gemini-3.7-flash`, configurabile con `PORTFOLIO_GEMINI_MODEL`. Il listino introduttivo usato per la stima e' $0,75 per milione di token input e $3,75 per milione di token output o ragionamento fino al 31 dicembre 2026.
 Il livello di ragionamento predefinito e' `medium`, configurabile con `PORTFOLIO_GEMINI_THINKING_LEVEL`.
 Il budget massimo predefinito e' di 20000 token, configurabile con `PORTFOLIO_GEMINI_MAX_OUTPUT_TOKENS`.
 La system instruction impone la semantica dei dati Fineco, il divieto di introdurre cause esterne e l'uso esclusivo di un blocco di fatti numerici verificati e formattati da PHP.

@@ -359,7 +359,7 @@ function earnings_generate_report(PDO $pdo, array $event): array
     $sourceUrl = earnings_validate_source_url((string) ($event['source_url'] ?? ''), true);
     $geminiConfig = app_config()['gemini'] ?? [];
     $apiKey = (string) ($geminiConfig['api_key'] ?? '');
-    $model = (string) ($geminiConfig['model'] ?? 'gemini-3.5-flash-lite');
+    $model = (string) ($geminiConfig['model'] ?? 'gemini-3.7-flash');
     $thinkingLevel = (string) ($geminiConfig['thinking_level'] ?? 'medium');
     $maxOutputTokens = min(12000, (int) ($geminiConfig['max_output_tokens'] ?? 12000));
     $timeoutSeconds = (int) ($geminiConfig['timeout_seconds'] ?? 90);

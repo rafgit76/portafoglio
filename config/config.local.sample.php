@@ -11,14 +11,14 @@ return [
     ],
     'app' => [
         'base_path' => '/apps/portafoglio',
-        'app_version' => '2.1.0',
+        'app_version' => '2.1.2',
         'timezone' => 'Europe/Rome',
         'enable_fx' => true,
         'enable_news' => false,
     ],
     'gemini' => [
         'api_key' => 'YOUR_GEMINI_API_KEY',
-        'model' => 'gemini-3.5-flash-lite',
+        'model' => 'gemini-3.7-flash',
         'thinking_level' => 'medium',
         'max_output_tokens' => 20000,
         'timeout_seconds' => 90,

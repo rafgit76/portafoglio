@@ -233,7 +233,7 @@ function ai_report_import_legacy_cache(): ?array
 
 function ai_report_prompt_version(): string
 {
-    return '2026-07-25-gemini-3-5-medium-weekly-v11';
+    return '2026-08-14-gemini-3-7-general-length-v12';
 }
 
 function ai_report_build_payload(PDO $pdo): array
@@ -716,7 +716,7 @@ function ai_report_generate_request(
 {
     $geminiConfig = app_config()['gemini'] ?? [];
     $apiKey = (string) ($geminiConfig['api_key'] ?? '');
-    $model = (string) ($geminiConfig['model'] ?? 'gemini-3.5-flash-lite');
+    $model = (string) ($geminiConfig['model'] ?? 'gemini-3.7-flash');
     $thinkingLevel = (string) ($geminiConfig['thinking_level'] ?? 'medium');
     $maxOutputTokens = (int) ($geminiConfig['max_output_tokens'] ?? 20000);
     $timeoutSeconds = (int) ($geminiConfig['timeout_seconds'] ?? 90);
@@ -1163,7 +1163,7 @@ Non menzionare mai nel report questa verifica, il prompt, il JSON o i nomi tecni
 
 STILE E FORMATO
 - Rispondi soltanto in italiano.
-- Produci tra 1000 e 1400 parole: e un vincolo obbligatorio, non indicativo.
+- Produci tra 1000 e 1400 parole: e un vincolo obbligatorio, non indicativo. Il target operativo e 1050-1250 parole.
 - Mantieni cifre, segni, separatori e decimali esattamente come forniti nel blocco verificato.
 - Usa esclusivamente le sette intestazioni Markdown richieste dall'utente.
 - Sotto ogni intestazione scrivi paragrafi completi e leggibili; usa elenchi solo nell'ultima sezione quando migliorano la chiarezza.
@@ -1179,25 +1179,30 @@ Genera un report sullo storico del portafoglio. Il blocco FATTI VERIFICATI e aut
 
 Struttura obbligatoria, nello stesso ordine:
 ### Sintesi
-120-180 parole. Riporta periodo esatto, valori iniziali e finali, delta complessivi e quadro generale senza attribuire cause non documentate.
+120-150 parole. Riporta periodo esatto, valori iniziali e finali, delta complessivi e quadro generale senza attribuire cause non documentate.
 
 ### Evoluzione dello storico
-180-220 parole. Descrivi andamento dei totali, massimi, minimi e fasi osservabili nella serie, senza attribuirle a singoli asset o eventi esterni.
+160-190 parole. Descrivi andamento dei totali, massimi, minimi e fasi osservabili nella serie, senza attribuirle a singoli asset o eventi esterni.
 
 ### Principali variazioni per posizione
-220-260 parole. Descrivi i principali delta verificati di controvalore, P/L e peso senza parlare di contributi causali e senza dedurre acquisti, vendite o cause.
+190-220 parole. Descrivi i principali delta verificati di controvalore, P/L e peso senza parlare di contributi causali e senza dedurre acquisti, vendite o cause.
 
 ### Analisi per asset rilevanti
-220-260 parole. Descrivi le principali posizioni correnti con valore, peso e P/L. Distingui valori correnti e variazioni storiche.
+190-220 parole. Descrivi le principali posizioni correnti con valore, peso e P/L. Distingui valori correnti e variazioni storiche.
 
 ### Concentrazione e composizione
-140-180 parole. Descrivi la composizione corrente per tipologia e valuta con linguaggio neutro, senza trasformarla in una raccomandazione.
+130-150 parole. Descrivi la composizione corrente per tipologia e valuta con linguaggio neutro, senza trasformarla in una raccomandazione.
 
 ### Punti di attenzione
-120-160 parole. Evidenzia concentrazioni, P/L negativi, divergenze e limiti informativi realmente presenti nei dati.
+110-130 parole. Evidenzia concentrazioni, P/L negativi, divergenze e limiti informativi realmente presenti nei dati.
 
 ### Prossimi controlli utili
-80-120 parole. Indica soltanto controlli sui dati e sul monitoraggio futuro, senza suggerire operazioni finanziarie.
+70-90 parole. Indica soltanto controlli sui dati e sul monitoraggio futuro, senza suggerire operazioni finanziarie.
+
+BUDGET DI LUNGHEZZA VINCOLANTE
+- Pianifica silenziosamente il testo prima di scriverlo e mantieni ogni sezione nel proprio intervallo.
+- Il report completo deve avere tra 1050 e 1250 parole; non superare mai 1400 parole.
+- Prima di restituire la risposta, conta silenziosamente le parole: se superano 1250, elimina ripetizioni e dettagli secondari mantenendo tutte le sette sezioni e i fatti richiesti.
 
 FATTI VERIFICATI DAL CODICE PHP:
 ```text
@@ -1267,7 +1272,7 @@ function ai_report_build_repair_prompt(
     $scope = match ($reportType) {
         'custom' => 'Riscrivi integralmente la risposta alla richiesta personalizzata.',
         'changes' => 'Riscrivi integralmente il confronto in forma compatta, con tabella dei totali e una mini-tabella per ogni strumento.',
-        default => 'Riscrivi integralmente il report con tutte le sette sezioni e tra 1000 e 1400 parole.',
+        default => 'Riscrivi integralmente il report con tutte le sette sezioni. Mantienilo tra 1050 e 1250 parole e non superare mai 1400 parole.',
     };
 
     return <<<PROMPT
@@ -1276,6 +1281,7 @@ Motivo: {$validationError}
 
 {$scope}
 Restituisci soltanto la versione corretta e completa, senza commentare l'errore e senza premesse.
+Per il report complessivo usa un budget rigido: pianifica le sette sezioni, conta silenziosamente le parole prima di rispondere e comprimi ogni ripetizione fino a restare entro 1250 parole.
 Ogni numero deve essere copiato in cifre dal blocco verificato. Non eseguire alcun calcolo.
 Sono vietati numeri e date in lettere, inclusi i termini virgola, per cento e duemila.
 
@@ -1463,7 +1469,7 @@ function ai_report_validate_generated_text(string $text, string $finishReason, a
     if (count($words) < 950) {
         throw new RuntimeException('Gemini ha restituito un report troppo breve: il risultato non e stato salvato.');
     }
-    if (count($words) > 1550) {
+    if (count($words) > 1400) {
         throw new RuntimeException('Gemini ha restituito un report troppo lungo: deve restare entro 1400 parole.');
     }
 
@@ -1634,11 +1640,12 @@ function ai_report_estimate_cost_usd(
     int $outputTokens,
     int $thinkingTokens = 0
 ): ?float {
-    // Standard Gemini Developer API rates verified on 2026-07-22.
+    // Standard Gemini Developer API rates verified on 2026-08-14.
     $ratesPerMillionTokens = [
         'gemini-3.1-flash-lite' => ['input' => 0.25, 'output' => 1.50],
         'gemini-3.5-flash-lite' => ['input' => 0.30, 'output' => 2.50],
         'gemini-3.6-flash' => ['input' => 1.50, 'output' => 7.50],
+        'gemini-3.7-flash' => ['input' => 0.75, 'output' => 3.75],
     ];
 
     $rates = $ratesPerMillionTokens[$model] ?? null;

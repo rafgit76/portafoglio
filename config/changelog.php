@@ -2,6 +2,26 @@
 
 return [
     [
+        'version' => '2.1.2',
+        'date' => '2026-08-14',
+        'title' => 'Report Gemini 3.7 entro il limite',
+        'changes' => [
+            'Rafforzato il budget di lunghezza del report complessivo per Gemini 3.7 Flash: target 1050-1250 parole e limite massimo di 1400 parole.',
+            'Ridotti e resi espliciti i budget delle sette sezioni, mantenendo invariati dati verificati, prompt numerico e thinkingLevel medium.',
+            'Reso coerente il controllo lato PHP con il limite dichiarato e aggiunta compressione esplicita nel tentativo correttivo.',
+        ],
+    ],
+    [
+        'version' => '2.1.1',
+        'date' => '2026-08-14',
+        'title' => 'Report AI con Gemini 3.7 Flash',
+        'changes' => [
+            'Aggiornato il modello AI predefinito a gemini-3.7-flash mantenendo thinkingLevel medium, prompt e limiti di output invariati per un confronto diretto.',
+            'Mantenuta la chiamata Gemini esistente compatibile con generateContent, senza parametri di campionamento deprecati.',
+            'Aggiornato il calcolo del costo stimato al listino introduttivo Gemini 3.7 Flash: $0,75 per milione di token input e $3,75 per milione di token output o ragionamento fino al 31 dicembre 2026.',
+        ],
+    ],
+    [
         'version' => '2.1.0',
         'date' => '2026-08-08',
         'title' => 'Snapshot piu navigabili e deploy protetto',
