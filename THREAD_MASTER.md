@@ -5,7 +5,7 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `2.1.2`
+- `2.2.1`
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto
@@ -58,6 +58,10 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - `index.php`: home privacy senza dati economici e sblocco con PIN
 - `dashboard.php`: dashboard principale
 - `upload.php`: upload file Fineco e creazione snapshot
+- `account.php`: modulo opzionale per patrimonio, saldi, liquidita e riconciliazione
+- `account_history.php`: archivio patrimoniale con estremi e grafici di patrimonio e saldi
+- `credit_lines.php`: fidi e linee di credito separati dal patrimonio
+- `dossiers.php`: integrazione manuale di posizioni per dossier non esportati
 - `snapshots.php`: storico snapshot con eliminazione
 - `snapshot.php`: dettaglio di un singolo snapshot
 - `compare.php`: confronto snapshot e export CSV
@@ -75,6 +79,8 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - `lib/helpers.php`: config, escaping, redirect, flash, parsing numerico
 - `lib/db.php`: connessione PDO MySQL
 - `lib/fineco_importer.php`: import principale Fineco
+- `lib/fineco_patrimony_importer.php`: parser opzionale dell'export Patrimonio Fineco con detection per etichette
+- `lib/account_tracker.php`: dossier, consolidamento, revisioni, patrimonio e trasferimenti interni
 - `lib/fineco_xlsx_parser.php`: parser Fineco `.xls`/`.xlsx`, conversione e detection dinamica intestazioni
 - `lib/xlsx_reader.php`: fallback XLSX custom senza Composer
 - `lib/fx.php`: recupero e cache EUR/USD da ECB
@@ -99,6 +105,14 @@ Tabelle realmente usate dall'app:
 - `pf_snapshot_positions`
 - `pf_import_jobs`
 - `pf_earnings_events`
+- `pf_dossiers`
+- `pf_patrimonial_snapshots`
+- `pf_patrimonial_dossier_values`
+- `pf_patrimonial_import_jobs`
+- `pf_credit_lines`
+- `pf_credit_line_snapshots`
+- `pf_internal_transfers`
+- `pf_snapshot_revisions`
 
 Classificazioni versionate fuori dal database:
 - `config/asset_classifications.php`: profili per ISIN, fonti, date e pesi look-through o classificazioni dichiarate
@@ -125,7 +139,34 @@ Relazione funzionale principale:
 9. L'app registra il job di import in `pf_import_jobs`.
 
 Nota importante:
-- in caso di reimport sulla stessa data, lo snapshot viene riusato e le posizioni esistenti di quello snapshot vengono rigenerate
+- in caso di reimport sulla stessa data, lo snapshot viene riusato; dopo la migrazione 2.2.0 viene aggiornato solo il dossier di provenienza dell'import, mentre gli altri dossier restano intatti e il totale viene consolidato
+
+## Modulo conto 2.2.0
+
+Regola fondamentale:
+- il portafoglio Fineco e obbligatorio
+- patrimonio, liquidita, saldi, fidi e dossier aggiuntivi sono opzionali
+- il credito disponibile non e mai patrimonio
+
+Migrazione richiesta su database esistente:
+- prima esportare il DB completo da phpMyAdmin
+- poi importare una sola volta `sql/migration_2_2_0_account_tracker.sql`
+- non esiste un dump automatico affidabile via PHP su Aruba condiviso; le revisioni logiche di singoli snapshot sono un ulteriore livello di recupero, non sostituiscono il backup del DB
+
+Flussi supportati:
+- solo export portafoglio
+- portafoglio + snapshot manuali del conto
+- portafoglio + export Patrimonio Fineco
+- portafoglio + export Patrimonio + override manuali
+- dossier ordinario e Credit Lombard nello stesso snapshot
+
+Il parser Patrimonio si basa sulle etichette reali dell'export Fineco: Patrimonio totale, Saldo contabile, Saldo disponibile, Totale liquidita, Totale multicurrency, Fido accordato/utilizzato/disponibile, Dossier e Totale portafoglio. I valori dei dossier sono usati per riconciliare il portafoglio consolidato e non vengono aggiunti una seconda volta al patrimonio Fineco.
+
+## Storico patrimonio 2.2.1
+
+- `account_history.php` legge soltanto `pf_patrimonial_snapshots` e gli snapshot portafoglio della stessa data per il valore consolidato.
+- mostra massimi/minimi senza modificare alcun dato e separa i grafici di patrimonio da quelli dei saldi.
+- i campi null restano non disponibili: nessun requisito aggiuntivo viene imposto al flusso solo portafoglio.
 
 ## Regola operativa ufficiale snapshot
 
@@ -156,6 +197,7 @@ Nota operativa:
 
 Requisiti PHP rilevanti:
 - PDO MySQL
+- mbstring
 - SimpleXML
 - ZipArchive
 - sessioni PHP

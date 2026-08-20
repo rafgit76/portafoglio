@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.1.2`
+Versione corrente: `2.2.1`
 
 ## Deploy (FTP)
 
@@ -23,7 +23,7 @@ Per creare una cartella FTP completa e pulita puoi eseguire:
 
 `.\build_deploy.ps1`
 
-Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto, includendo `vendor/` e la configurazione locale se presente, ma lasciando fuori `.git`, file di sviluppo, cache, upload storici e archivio dei report AI. Le cartelle `storage/uploads` e `storage/ai_reports` non sono nemmeno ricreate vuote nel pacchetto.
+Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto, includendo `vendor/` ma lasciando fuori `.git`, file di sviluppo, cache, credenziali locali, upload storici e archivio dei report AI. Le cartelle `storage/uploads` e `storage/ai_reports` non sono nemmeno ricreate vuote nel pacchetto. Usa `./build_deploy.ps1 -IncludeLocalConfig` soltanto per una prima installazione controllata.
 
 Durante l'upload con FileZilla, trasferisci i file del pacchetto nella cartella dell'app senza eliminare o sincronizzare in modo distruttivo `storage/` sul server. Le cartelle di storage vengono create automaticamente dall'app alla prima necessita.
 
@@ -56,7 +56,11 @@ In `config/config.local.php` puoi regolare:
 
 - `index.php`: home privacy senza dati economici e sblocco con PIN
 - `dashboard.php`: dashboard completa del portafoglio
-- `upload.php`: import diretto file Fineco `.xls`/`.xlsx` e conversione opzionale in `.xlsx`
+- `upload.php`: import separato del portafoglio e, facoltativamente, dell'export Patrimonio Fineco
+- `account.php`: patrimonio, saldi, liquidita, riconciliazione e snapshot manuali opzionali
+- `account_history.php`: archivio patrimoniale paginato, estremi storici e grafici separati di patrimonio e saldi
+- `credit_lines.php`: gestione separata di fidi e linee di credito
+- `dossiers.php`: integrazione manuale di posizioni in dossier non esportati
 - `snapshots.php`: storico snapshot paginato, con massimo/minimo P/L evidenziati sull'intero archivio
 - `snapshot.php?id=...`: dettaglio snapshot
 - `assets.php`: composizione, diversificazione, fonti e anagrafica strumenti
@@ -74,6 +78,23 @@ Il PIN e una protezione semplice pensata per evitare che i dati del portafoglio 
 Salva soltanto l'hash del PIN in `config/config.local.php` oppure nella variabile ambiente `PORTFOLIO_PRIVACY_PIN_HASH`. Puoi generarlo con `password_hash()` come mostrato in `config/config.local.sample.php`. Il PIN non viene mai salvato in chiaro.
 
 Lo sblocco scade dopo 30 minuti di inattivita. Dopo 10 tentativi errati dallo stesso indirizzo IP, l'accesso resta bloccato per 15 minuti. Il registro tecnico e salvato in `storage/privacy_attempts.json`, escluso da Git e dai pacchetti FTP; la cartella `storage` deve essere scrivibile da PHP.
+
+## Conto, patrimonio e dossier
+
+Il portafoglio resta la base obbligatoria dell'app. Tutte le altre funzioni sono opzionali: se carichi soltanto l'export Portfolio Fineco l'app continua a funzionare come prima.
+
+Per attivare il modulo Conto su un database esistente, prima esporta il database completo da phpMyAdmin, poi importa **una sola volta** `sql/migration_2_2_0_account_tracker.sql`. Aruba non offre un backup automatico affidabile da PHP senza shell: l'export phpMyAdmin e il backup completo da conservare prima della migrazione. Ogni modifica manuale a uno snapshot gia esistente crea inoltre un backup logico recuperabile in `pf_snapshot_revisions`.
+
+In `Upload` sono disponibili due flussi distinti:
+
+1. **Import portafoglio Fineco**: obbligatorio, con scelta del dossier di provenienza. Gli snapshot storici precedenti alla migrazione sono trattati automaticamente come dossier ordinario.
+2. **Import patrimonio Fineco**: facoltativo. Il parser riconosce le etichette Fineco, non righe fisse, e importa solo voci presenti: patrimonio totale, saldo contabile, saldo disponibile, totale liquidita, multicurrency, fido e valori dossier. Nel file campione Fineco il dossier a pegno viene associato al dossier Credit Lombard; i suoi valori servono alla riconciliazione e non vengono sommati una seconda volta al patrimonio totale.
+
+Le priorita sono: import Patrimonio Fineco, override manuale per la stessa data, valore calcolato se applicabile. Il payload importato e conservato insieme agli override manuali. Il credito disponibile non e mai patrimonio; il patrimonio ricostruito e disponibile solo quando esistono per la stessa data valore del portafoglio e liquidita propria. Il patrimonio netto rettificato sottrae soltanto il debito/fido effettivamente utilizzato.
+
+La pagina `Conto -> Andamento patrimonio` conserva gli snapshot patrimoniali giornalieri in un archivio separato da quello del portafoglio. Mostra gli estremi sull'intera cronologia e grafici distinti per patrimonio e saldi; valori assenti restano semplicemente non disponibili e non generano grafici vuoti.
+
+Per il trasferimento BTP del `20/08/2026`, non modificare lo storico automaticamente. Dopo avere un export del dossier Credit Lombard, importalo selezionando il dossier corretto oppure usa `Dossier e posizioni manuali`: verifica data, quantita, valore di carico e mercato, spunta la conferma. L'app conserva il prima/dopo nel backup logico, ricalcola il consolidato e, se il matching e netto, propone il trasferimento interno da confermare. Nessuna proposta modifica P/L o patrimonio da sola.
 
 ## Report AI
 

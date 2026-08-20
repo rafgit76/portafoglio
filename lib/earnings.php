@@ -38,12 +38,13 @@ function earnings_list_events(PDO $pdo): array
                    latest.market_value AS latest_market_value
             FROM pf_earnings_events e
             JOIN pf_assets a ON a.id = e.asset_id
-            LEFT JOIN pf_snapshot_positions latest
-              ON latest.asset_id = e.asset_id
-             AND latest.snapshot_id = (
-                 SELECT s.id FROM pf_snapshots s
-                 ORDER BY s.snapshot_date DESC, s.id DESC LIMIT 1
-             )
+            LEFT JOIN (
+                SELECT p.asset_id, SUM(p.market_value) AS market_value,
+                       SUM(p.market_value) / NULLIF((SELECT s.total_market_value FROM pf_snapshots s ORDER BY s.snapshot_date DESC, s.id DESC LIMIT 1), 0) AS weight_pct
+                FROM pf_snapshot_positions p
+                WHERE p.snapshot_id = (SELECT s.id FROM pf_snapshots s ORDER BY s.snapshot_date DESC, s.id DESC LIMIT 1)
+                GROUP BY p.asset_id
+            ) latest ON latest.asset_id = e.asset_id
             ORDER BY e.report_date DESC, e.id DESC';
 
     return $pdo->query($sql)->fetchAll();
@@ -52,15 +53,16 @@ function earnings_list_events(PDO $pdo): array
 function earnings_significant_assets(PDO $pdo): array
 {
     $sql = 'SELECT a.id, a.name, a.ticker, a.isin, a.currency,
-                   p.market_value, p.weight_pct, s.snapshot_date
+                   p.market_value, p.weight_pct, p.snapshot_date
             FROM pf_assets a
-            LEFT JOIN pf_snapshot_positions p
-              ON p.asset_id = a.id
-             AND p.snapshot_id = (
-                 SELECT latest.id FROM pf_snapshots latest
-                 ORDER BY latest.snapshot_date DESC, latest.id DESC LIMIT 1
-             )
-            LEFT JOIN pf_snapshots s ON s.id = p.snapshot_id
+            LEFT JOIN (
+                SELECT p.asset_id, SUM(p.market_value) AS market_value,
+                       SUM(p.market_value) / NULLIF((SELECT s.total_market_value FROM pf_snapshots s ORDER BY s.snapshot_date DESC, s.id DESC LIMIT 1), 0) AS weight_pct,
+                       (SELECT s.snapshot_date FROM pf_snapshots s ORDER BY s.snapshot_date DESC, s.id DESC LIMIT 1) AS snapshot_date
+                FROM pf_snapshot_positions p
+                WHERE p.snapshot_id = (SELECT latest.id FROM pf_snapshots latest ORDER BY latest.snapshot_date DESC, latest.id DESC LIMIT 1)
+                GROUP BY p.asset_id
+            ) p ON p.asset_id = a.id
             WHERE a.asset_type = \'AZIONE\' AND a.is_active = 1
             ORDER BY COALESCE(p.weight_pct, 0) DESC, a.name ASC';
 
@@ -247,11 +249,15 @@ function earnings_impact(PDO $pdo, array $event): array
         }
 
         $sql = 'SELECT s.id AS snapshot_id, s.snapshot_date, s.total_market_value,
-                       p.quantity, p.current_price, p.market_value, p.unrealized_pnl, p.weight_pct,
-                       p.currency
+                       SUM(p.quantity) AS quantity,
+                       CASE WHEN SUM(p.quantity) <> 0 THEN SUM(p.current_price * p.quantity) / SUM(p.quantity) ELSE 0 END AS current_price,
+                       SUM(p.market_value) AS market_value, SUM(p.unrealized_pnl) AS unrealized_pnl,
+                       SUM(p.market_value) / NULLIF(s.total_market_value, 0) AS weight_pct,
+                       MAX(p.currency) AS currency
                 FROM pf_snapshot_positions p
                 JOIN pf_snapshots s ON s.id = p.snapshot_id
                 WHERE p.asset_id = :asset_id AND s.snapshot_date ' . $operator . ' :snapshot_date
+                GROUP BY s.id, s.snapshot_date, s.total_market_value
                 ORDER BY s.snapshot_date ' . $direction . ', s.id ' . $direction . '
                 LIMIT 1';
         $stmt = $pdo->prepare($sql);

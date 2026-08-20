@@ -61,6 +61,10 @@ final class FinecoXlsxParser
 
     public function parse(string $spreadsheetPath): array
     {
+        if (strtolower(pathinfo($spreadsheetPath, PATHINFO_EXTENSION)) === 'csv') {
+            return $this->parseCsv($spreadsheetPath);
+        }
+
         if (class_exists(IOFactory::class)) {
             return $this->parseWithPhpSpreadsheet($spreadsheetPath);
         }
@@ -125,6 +129,63 @@ final class FinecoXlsxParser
         } finally {
             $spreadsheet->disconnectWorksheets();
         }
+    }
+
+    private function parseCsv(string $csvPath): array
+    {
+        $handle = @fopen($csvPath, 'rb');
+        if (!is_resource($handle)) {
+            throw new RuntimeException('Impossibile leggere il file CSV caricato.');
+        }
+
+        try {
+            $sample = (string) fgets($handle);
+            rewind($handle);
+            $delimiter = substr_count($sample, ';') >= substr_count($sample, ',') ? ';' : ',';
+            $rows = [];
+            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+                $rows[] = array_map(static function ($value): string {
+                    return preg_replace('/^\xEF\xBB\xBF/', '', (string) $value) ?? '';
+                }, $row);
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        $detection = $this->detectHeaderRowInArray($rows);
+        if ($detection === null) {
+            throw new RuntimeException('Intestazioni Fineco non trovate nel CSV.');
+        }
+
+        $positions = [];
+        $emptyStreak = 0;
+        foreach ($rows as $rowNum => $line) {
+            if ($rowNum <= $detection['row']) {
+                continue;
+            }
+
+            $record = [];
+            foreach ($detection['headers'] as $field => $idx) {
+                $record[$field] = trim((string) ($line[$idx] ?? ''));
+            }
+            $position = $this->positionFromRecord($record);
+            if ($position === null) {
+                $emptyStreak++;
+                if ($emptyStreak >= 20) {
+                    break;
+                }
+                continue;
+            }
+
+            $emptyStreak = 0;
+            $positions[] = $position;
+        }
+
+        if ($positions === []) {
+            throw new RuntimeException('Nessuna posizione valida trovata nel CSV caricato.');
+        }
+
+        return $positions;
     }
 
     private function detectHeaderRowInSheet(Worksheet $sheet): ?array

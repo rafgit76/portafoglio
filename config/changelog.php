@@ -2,6 +2,29 @@
 
 return [
     [
+        'version' => '2.2.1',
+        'date' => '2026-08-20',
+        'title' => 'Storico patrimonio e saldi',
+        'changes' => [
+            'Aggiunta la pagina Andamento patrimonio con archivio paginato degli snapshot patrimoniali giornalieri.',
+            'Aggiunti massimi e minimi storici per patrimonio Fineco e saldi, con righe ed etichette evidenziate nella tabella.',
+            'Aggiunti grafici distinti per patrimonio e saldi, mostrati solo quando i relativi dati sono disponibili.',
+            'Mantenuta la piena opzionalita dei dati conto: il tracker del solo portafoglio continua a funzionare senza snapshot patrimoniali.',
+        ],
+    ],
+    [
+        'version' => '2.2.0',
+        'date' => '2026-08-20',
+        'title' => 'Tracker completo del conto',
+        'changes' => [
+            'Aggiunto il modulo opzionale Conto con patrimonio, liquidita, saldi, riconciliazione e distinzione esplicita tra patrimonio e credito.',
+            'Aggiunto l\'import opzionale dell\'export Patrimonio Fineco: acquisisce le voci realmente presenti, inclusi patrimonio totale, saldi, liquidita, multicurrency, fido e valori dossier.',
+            'Aggiunto il supporto multi-dossier per gli import di portafoglio: ordinario e Credit Lombard possono convivere nello stesso snapshot e vengono consolidati senza duplicazioni.',
+            'Aggiunti fidi manuali, posizioni manuali di dossier, backup logico degli snapshot modificati e proposte di trasferimento interno da confermare.',
+            'Adeguate Strumenti, Andamento, Confronto, dettaglio titolo, Report AI e Trimestrali al consolidamento di uno stesso ISIN presente in piu dossier.',
+        ],
+    ],
+    [
         'version' => '2.1.2',
         'date' => '2026-08-14',
         'title' => 'Report Gemini 3.7 entro il limite',

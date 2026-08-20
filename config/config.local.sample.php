@@ -11,10 +11,12 @@ return [
     ],
     'app' => [
         'base_path' => '/apps/portafoglio',
-        'app_version' => '2.1.2',
+        'app_version' => '2.2.0',
         'timezone' => 'Europe/Rome',
         'enable_fx' => true,
         'enable_news' => false,
+        // Lascia null per non applicare una soglia arbitraria di riconciliazione.
+        'account_reconciliation_warn_pct' => null,
     ],
     'gemini' => [
         'api_key' => 'YOUR_GEMINI_API_KEY',

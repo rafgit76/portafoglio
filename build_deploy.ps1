@@ -1,5 +1,5 @@
 param(
-    [switch] $SkipLocalConfig
+    [switch] $IncludeLocalConfig
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,6 +19,7 @@ $excludeDirs = @(
     (Join-Path $projectRoot '.git'),
     (Join-Path $projectRoot 'storage\ai_reports'),
     (Join-Path $projectRoot 'storage\uploads'),
+    (Join-Path $projectRoot 'tests'),
     (Join-Path $projectRoot 'tmp')
 )
 
@@ -31,11 +32,12 @@ $excludeFiles = @(
     'composer.json',
     'composer.lock',
     'ai_report_cache.json',
-    'privacy_attempts.json'
+    'privacy_attempts.json',
+    'config.local.php'
 )
 
-if ($SkipLocalConfig) {
-    $excludeFiles += 'config.local.php'
+if ($IncludeLocalConfig) {
+    $excludeFiles = $excludeFiles | Where-Object { $_ -ne 'config.local.php' }
 }
 
 $robocopyArgs = @(

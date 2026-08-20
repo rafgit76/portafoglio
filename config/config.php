@@ -20,7 +20,7 @@ $config = [
         'base_path' => $env('PORTFOLIO_BASE_PATH', '/apps/portafoglio'),
         'default_currency' => 'EUR',
         'target_php_version' => '8.4',
-        'app_version' => '2.1.2',
+        'app_version' => '2.2.1',
         'public_app_name' => 'Portfolio Investimenti',
         'timezone' => 'Europe/Rome',
         'upload_max_size_mb' => 10,
@@ -29,6 +29,8 @@ $config = [
         'enable_fx' => true,
         'enable_news' => false,
         'external_fetch_timeout_seconds' => 3,
+        // Null disables the warning: the app never imposes an arbitrary reconciliation threshold.
+        'account_reconciliation_warn_pct' => null,
     ],
     'gemini' => [
         'api_key' => $env('PORTFOLIO_GEMINI_API_KEY', ''),

@@ -2,10 +2,11 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/account_tracker.php';
 require_once __DIR__ . '/xlsx_reader.php';
 require_once __DIR__ . '/fineco_xlsx_parser.php';
 
-function import_fineco_spreadsheet(string $uploadedPath, string $originalFileName, string $snapshotDate): array
+function import_fineco_spreadsheet(string $uploadedPath, string $originalFileName, string $snapshotDate, string $dossierCode = 'ordinario'): array
 {
     $parser = new FinecoXlsxParser();
     $parsedPositions = $parser->parse($uploadedPath);
@@ -65,6 +66,11 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
     }
 
     $pdo = db();
+    $accountTrackerEnabled = account_tracker_schema_ready($pdo);
+    $dossier = $accountTrackerEnabled ? account_tracker_find_dossier($pdo, $dossierCode) : null;
+    if ($accountTrackerEnabled && (!$dossier || !(bool) $dossier['is_active'])) {
+        throw new RuntimeException('Dossier non disponibile per l\'import.');
+    }
     $pdo->beginTransaction();
 
     try {
@@ -91,7 +97,25 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
             $snapshotId = (int) $q->fetchColumn();
         }
 
-        $pdo->prepare('DELETE FROM pf_snapshot_positions WHERE snapshot_id = :id')->execute([':id' => $snapshotId]);
+        $snapshotRevisionId = 0;
+        if ($accountTrackerEnabled) {
+            $hasExistingPositions = $pdo->prepare('SELECT COUNT(*) FROM pf_snapshot_positions WHERE snapshot_id = :snapshot_id');
+            $hasExistingPositions->execute([':snapshot_id' => $snapshotId]);
+            if ((int) $hasExistingPositions->fetchColumn() > 0) {
+                $snapshotRevisionId = account_tracker_backup_snapshot($pdo, $snapshotId, 'DOSSIER_IMPORT', [
+                    'dossier_code' => (string) $dossier['code'],
+                    'file_name' => $originalFileName,
+                ]);
+            }
+
+            $deleteImported = $pdo->prepare(
+                'DELETE FROM pf_snapshot_positions
+                 WHERE snapshot_id = :snapshot_id AND dossier_id = :dossier_id AND data_origin = "IMPORT_FINECO"'
+            );
+            $deleteImported->execute([':snapshot_id' => $snapshotId, ':dossier_id' => (int) $dossier['id']]);
+        } else {
+            $pdo->prepare('DELETE FROM pf_snapshot_positions WHERE snapshot_id = :id')->execute([':id' => $snapshotId]);
+        }
 
         $stmtFindAssetByIsin = $pdo->prepare('SELECT id FROM pf_assets WHERE isin = :isin LIMIT 1');
         $stmtInsertAsset = $pdo->prepare(
@@ -105,15 +129,24 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
         );
 
         $stmtInsertPos = $pdo->prepare(
-            'INSERT INTO pf_snapshot_positions
-            (snapshot_id, asset_id, quantity, avg_load_price, current_price, cost_basis, market_value, unrealized_pnl, weight_pct, currency, imported_gain_value, imported_weight_pct)
-            VALUES
-            (:snapshot_id, :asset_id, :quantity, :avg_load_price, :current_price, :cost_basis, :market_value, :unrealized_pnl, :weight_pct, :currency, :imported_gain_value, :imported_weight_pct)'
+            $accountTrackerEnabled
+                ? 'INSERT INTO pf_snapshot_positions
+                    (snapshot_id, dossier_id, asset_id, quantity, avg_load_price, current_price, cost_basis, market_value, unrealized_pnl, weight_pct, currency, data_origin, imported_gain_value, imported_weight_pct)
+                   VALUES
+                    (:snapshot_id, :dossier_id, :asset_id, :quantity, :avg_load_price, :current_price, :cost_basis, :market_value, :unrealized_pnl, :weight_pct, :currency, "IMPORT_FINECO", :imported_gain_value, :imported_weight_pct)'
+                : 'INSERT INTO pf_snapshot_positions
+                    (snapshot_id, asset_id, quantity, avg_load_price, current_price, cost_basis, market_value, unrealized_pnl, weight_pct, currency, imported_gain_value, imported_weight_pct)
+                   VALUES
+                    (:snapshot_id, :asset_id, :quantity, :avg_load_price, :current_price, :cost_basis, :market_value, :unrealized_pnl, :weight_pct, :currency, :imported_gain_value, :imported_weight_pct)'
         );
 
         $sumCost = 0.0;
         $sumPnl = 0.0;
         $positionsByAssetId = [];
+        $stmtManualPosition = $accountTrackerEnabled ? $pdo->prepare(
+            'SELECT id FROM pf_snapshot_positions
+             WHERE snapshot_id = :snapshot_id AND dossier_id = :dossier_id AND asset_id = :asset_id AND data_origin <> "IMPORT_FINECO" LIMIT 1'
+        ) : null;
 
         foreach ($positionsRaw as $p) {
             $assetId = null;
@@ -163,12 +196,23 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
         }
 
         foreach ($positionsByAssetId as $assetId => $p) {
+            if ($stmtManualPosition instanceof PDOStatement) {
+                $stmtManualPosition->execute([
+                    ':snapshot_id' => $snapshotId,
+                    ':dossier_id' => (int) $dossier['id'],
+                    ':asset_id' => (int) $assetId,
+                ]);
+                if ($stmtManualPosition->fetchColumn()) {
+                    throw new RuntimeException('Esiste una posizione manuale nello stesso dossier e data. Rimuovila o conferma prima la relativa correzione.');
+                }
+            }
+
             $qty = max(0.000001, $p['quantity']);
             $avgLoadPrice = $p['sum_avg_x_qty'] / $qty;
             $currentPrice = $p['sum_current_x_qty'] / $qty;
             $weight = $totalMarket > 0 ? ($p['market_value'] / $totalMarket) : 0.0;
 
-            $stmtInsertPos->execute([
+            $positionParams = [
                 ':snapshot_id' => $snapshotId,
                 ':asset_id' => (int) $assetId,
                 ':quantity' => $p['quantity'],
@@ -181,51 +225,78 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
                 ':currency' => $p['currency'],
                 ':imported_gain_value' => $p['unrealized_pnl'],
                 ':imported_weight_pct' => $weight,
-            ]);
+            ];
+            if ($accountTrackerEnabled) {
+                $positionParams[':dossier_id'] = (int) $dossier['id'];
+            }
+            $stmtInsertPos->execute($positionParams);
 
             $sumCost += $p['cost_basis'];
             $sumPnl += $p['unrealized_pnl'];
         }
 
-        $stmtUpdateSnapshot = $pdo->prepare(
-            'UPDATE pf_snapshots
-             SET total_market_value = :mv,
-                 total_cost_basis = :cb,
-                 total_unrealized_pnl = :pnl
-             WHERE id = :id'
-        );
-
-        $stmtUpdateSnapshot->execute([
-            ':mv' => $totalMarket,
-            ':cb' => $sumCost,
-            ':pnl' => $sumPnl,
-            ':id' => $snapshotId,
-        ]);
+        if ($accountTrackerEnabled) {
+            $snapshotTotals = account_tracker_recalculate_snapshot($pdo, $snapshotId);
+            account_tracker_finalize_snapshot_backup($pdo, $snapshotRevisionId, $snapshotId);
+        } else {
+            $stmtUpdateSnapshot = $pdo->prepare(
+                'UPDATE pf_snapshots
+                 SET total_market_value = :mv,
+                     total_cost_basis = :cb,
+                     total_unrealized_pnl = :pnl
+                 WHERE id = :id'
+            );
+            $stmtUpdateSnapshot->execute([
+                ':mv' => $totalMarket,
+                ':cb' => $sumCost,
+                ':pnl' => $sumPnl,
+                ':id' => $snapshotId,
+            ]);
+            $snapshotTotals = [
+                'total_market_value' => $totalMarket,
+                'total_cost_basis' => $sumCost,
+                'total_unrealized_pnl' => $sumPnl,
+            ];
+        }
 
         $stmtImportJob = $pdo->prepare(
-            'INSERT INTO pf_import_jobs
-            (snapshot_id, file_name, source_type, status, rows_total, rows_ok, rows_error, error_summary, created_at, started_at, finished_at)
-            VALUES
-            (:snapshot_id, :file_name, :source_type, :status, :rows_total, :rows_ok, :rows_error, :error_summary, NOW(), NOW(), NOW())'
+            $accountTrackerEnabled
+                ? 'INSERT INTO pf_import_jobs
+                    (snapshot_id, dossier_id, file_name, source_type, status, rows_total, rows_ok, rows_error, error_summary, created_at, started_at, finished_at)
+                   VALUES
+                    (:snapshot_id, :dossier_id, :file_name, :source_type, :status, :rows_total, :rows_ok, :rows_error, :error_summary, NOW(), NOW(), NOW())'
+                : 'INSERT INTO pf_import_jobs
+                    (snapshot_id, file_name, source_type, status, rows_total, rows_ok, rows_error, error_summary, created_at, started_at, finished_at)
+                   VALUES
+                    (:snapshot_id, :file_name, :source_type, :status, :rows_total, :rows_ok, :rows_error, :error_summary, NOW(), NOW(), NOW())'
         );
 
-        $stmtImportJob->execute([
+        $jobParams = [
             ':snapshot_id' => $snapshotId,
             ':file_name' => $originalFileName,
             ':source_type' => 'EXCEL',
             ':status' => 'COMPLETED',
         ':rows_total' => count($parsedPositions),
-        ':rows_ok' => count($positionsRaw),
+            ':rows_ok' => count($positionsRaw),
             ':rows_error' => 0,
             ':error_summary' => null,
-        ]);
+        ];
+        if ($accountTrackerEnabled) {
+            $jobParams[':dossier_id'] = (int) $dossier['id'];
+        }
+        $stmtImportJob->execute($jobParams);
+
+        $transferCandidates = $accountTrackerEnabled
+            ? account_tracker_detect_transfer_candidates($pdo, $snapshotId, (int) $dossier['id'])
+            : [];
 
         $pdo->commit();
 
         return [
             'snapshot_id' => $snapshotId,
             'positions' => count($positionsRaw),
-            'total_market_value' => $totalMarket,
+            'total_market_value' => (float) $snapshotTotals['total_market_value'],
+            'transfer_candidates' => $transferCandidates,
         ];
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -233,9 +304,9 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
     }
 }
 
-function import_fineco_xlsx(string $uploadedPath, string $originalFileName, string $snapshotDate): array
+function import_fineco_xlsx(string $uploadedPath, string $originalFileName, string $snapshotDate, string $dossierCode = 'ordinario'): array
 {
-    return import_fineco_spreadsheet($uploadedPath, $originalFileName, $snapshotDate);
+    return import_fineco_spreadsheet($uploadedPath, $originalFileName, $snapshotDate, $dossierCode);
 }
 
 function normalize_headers(array $headerRow): array

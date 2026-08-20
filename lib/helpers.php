@@ -187,6 +187,10 @@ function privacy_safe_return_path(?string $path): string
         'compare.php',
         'assets.php',
         'asset.php',
+        'account.php',
+        'account_history.php',
+        'credit_lines.php',
+        'dossiers.php',
         'earnings.php',
         'earnings_event.php',
         'ai_report.php',
@@ -420,7 +424,7 @@ function uploaded_spreadsheet_type(string $path, string $originalFileName): ?str
     }
 
     $extension = strtolower(pathinfo($originalFileName, PATHINFO_EXTENSION));
-    if (!in_array($extension, ['xls', 'xlsx'], true)) {
+    if (!in_array($extension, ['xls', 'xlsx', 'csv'], true)) {
         return null;
     }
 
@@ -434,6 +438,14 @@ function uploaded_spreadsheet_type(string $path, string $originalFileName): ?str
 
     if (!is_string($signature)) {
         return null;
+    }
+
+    if ($extension === 'csv') {
+        $sample = file_get_contents($path, false, null, 0, 16384);
+        if (!is_string($sample) || trim($sample) === '' || str_contains($sample, "\0")) {
+            return null;
+        }
+        return 'csv';
     }
 
     $hasExpectedSignature = $extension === 'xlsx'

@@ -251,16 +251,7 @@ function ai_report_build_payload(PDO $pdo): array
     $latestSnapshot = $snapshots[count($snapshots) - 1];
     $latestSnapshotId = (int) $latestSnapshot['id'];
 
-    $latestPositionsStmt = $pdo->prepare(
-        'SELECT a.name, a.isin, a.ticker, a.asset_type, a.currency,
-                p.quantity, p.cost_basis, p.market_value, p.unrealized_pnl, p.weight_pct
-         FROM pf_snapshot_positions p
-         JOIN pf_assets a ON a.id = p.asset_id
-         WHERE p.snapshot_id = :snapshot_id
-         ORDER BY p.market_value DESC'
-    );
-    $latestPositionsStmt->execute([':snapshot_id' => $latestSnapshotId]);
-    $latestPositions = $latestPositionsStmt->fetchAll();
+    $latestPositions = ai_report_latest_positions($pdo, $latestSnapshotId);
 
     $firstSnapshotId = (int) $snapshots[0]['id'];
     $positionChanges = ai_report_position_changes($pdo, $firstSnapshotId, $latestSnapshotId);
@@ -383,16 +374,7 @@ function ai_report_build_changes_payload_from_snapshots(
     $previousSnapshotId = (int) $previousSnapshot['id'];
     $latestSnapshotId = (int) $latestSnapshot['id'];
 
-    $latestPositionsStmt = $pdo->prepare(
-        'SELECT a.name, a.isin, a.ticker, a.asset_type, a.currency,
-                p.quantity, p.cost_basis, p.market_value, p.unrealized_pnl, p.weight_pct
-         FROM pf_snapshot_positions p
-         JOIN pf_assets a ON a.id = p.asset_id
-         WHERE p.snapshot_id = :snapshot_id
-         ORDER BY p.market_value DESC'
-    );
-    $latestPositionsStmt->execute([':snapshot_id' => $latestSnapshotId]);
-    $latestPositions = $latestPositionsStmt->fetchAll();
+    $latestPositions = ai_report_latest_positions($pdo, $latestSnapshotId);
 
     $positionChanges = ai_report_position_changes($pdo, $previousSnapshotId, $latestSnapshotId, 0);
     $series = ai_report_series([$previousSnapshot, $latestSnapshot]);
@@ -593,14 +575,16 @@ function ai_report_position_changes(PDO $pdo, int $firstSnapshotId, int $latestS
              SELECT asset_id FROM pf_snapshot_positions WHERE snapshot_id = :latest_id
          ) ids
          JOIN pf_assets a ON a.id = ids.asset_id
-         LEFT JOIN pf_snapshot_positions p_first ON p_first.asset_id = ids.asset_id AND p_first.snapshot_id = :first_pos
-         LEFT JOIN pf_snapshot_positions p_latest ON p_latest.asset_id = ids.asset_id AND p_latest.snapshot_id = :latest_pos'
+         LEFT JOIN (SELECT asset_id, SUM(quantity) AS quantity, CASE WHEN SUM(quantity) <> 0 THEN SUM(current_price * quantity) / SUM(quantity) ELSE 0 END AS current_price, SUM(cost_basis) AS cost_basis, SUM(market_value) AS market_value, SUM(unrealized_pnl) AS unrealized_pnl, SUM(market_value) / NULLIF((SELECT total_market_value FROM pf_snapshots WHERE id=:first_total),0) AS weight_pct FROM pf_snapshot_positions WHERE snapshot_id=:first_pos GROUP BY asset_id) p_first ON p_first.asset_id = ids.asset_id
+         LEFT JOIN (SELECT asset_id, SUM(quantity) AS quantity, CASE WHEN SUM(quantity) <> 0 THEN SUM(current_price * quantity) / SUM(quantity) ELSE 0 END AS current_price, SUM(cost_basis) AS cost_basis, SUM(market_value) AS market_value, SUM(unrealized_pnl) AS unrealized_pnl, SUM(market_value) / NULLIF((SELECT total_market_value FROM pf_snapshots WHERE id=:latest_total),0) AS weight_pct FROM pf_snapshot_positions WHERE snapshot_id=:latest_pos GROUP BY asset_id) p_latest ON p_latest.asset_id = ids.asset_id'
     );
     $stmt->execute([
         ':first_id' => $firstSnapshotId,
         ':latest_id' => $latestSnapshotId,
         ':first_pos' => $firstSnapshotId,
         ':latest_pos' => $latestSnapshotId,
+        ':first_total' => $firstSnapshotId,
+        ':latest_total' => $latestSnapshotId,
     ]);
 
     $changes = [];
@@ -638,6 +622,24 @@ function ai_report_position_changes(PDO $pdo, int $firstSnapshotId, int $latestS
     usort($changes, static fn(array $a, array $b): int => abs($b['delta_market_value']) <=> abs($a['delta_market_value']));
 
     return $limit > 0 ? array_slice($changes, 0, $limit) : $changes;
+}
+
+function ai_report_latest_positions(PDO $pdo, int $snapshotId): array
+{
+    $statement = $pdo->prepare(
+        'SELECT a.name, a.isin, a.ticker, a.asset_type, a.currency,
+                SUM(p.quantity) AS quantity, SUM(p.cost_basis) AS cost_basis,
+                SUM(p.market_value) AS market_value, SUM(p.unrealized_pnl) AS unrealized_pnl,
+                SUM(p.market_value) / NULLIF(s.total_market_value, 0) AS weight_pct
+         FROM pf_snapshot_positions p
+         JOIN pf_assets a ON a.id=p.asset_id
+         JOIN pf_snapshots s ON s.id=p.snapshot_id
+         WHERE p.snapshot_id=:snapshot_id
+         GROUP BY a.id,a.name,a.isin,a.ticker,a.asset_type,a.currency,s.total_market_value
+         ORDER BY market_value DESC'
+    );
+    $statement->execute([':snapshot_id' => $snapshotId]);
+    return $statement->fetchAll();
 }
 
 function ai_report_generate_with_gemini(array $historyPayload): array

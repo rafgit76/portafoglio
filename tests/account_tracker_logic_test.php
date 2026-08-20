@@ -1,0 +1,69 @@
+<?php
+require_once __DIR__ . '/../lib/account_tracker.php';
+require_once __DIR__ . '/../lib/fineco_patrimony_importer.php';
+
+$checks = 0;
+$assert = static function (bool $condition, string $label) use (&$checks): void {
+    if (!$condition) {
+        throw new RuntimeException('Test fallito: ' . $label);
+    }
+    $checks++;
+};
+
+// Modalita solo portafoglio: dati mancanti non producono alcun patrimonio ricostruito.
+$wealth = account_tracker_reconstructed_wealth(180000.0, null, null);
+$assert($wealth['gross'] === null && $wealth['net_adjusted'] === null, 'solo portafoglio senza liquidita');
+
+// Il fido non entra nel lordo e viene sottratto solo dal netto rettificato.
+$wealth = account_tracker_reconstructed_wealth(187994.18, 3779.03, 3000.0);
+$assert(abs((float) $wealth['gross'] - 191773.21) < 0.01, 'patrimonio ricostruito');
+$assert(abs((float) $wealth['net_adjusted'] - 188773.21) < 0.01, 'debito utilizzato separato');
+$assert((float) $wealth['gross'] !== 194773.21, 'fido disponibile escluso');
+
+// Saldi negativi e campi opzionali sono valori leciti.
+$assert(account_tracker_optional_decimal('-125,50', 'saldo') === -125.5, 'saldo contabile negativo');
+$assert(account_tracker_optional_decimal('', 'campo') === null, 'campo patrimoniale facoltativo');
+
+// Trasferimento interno: tolleranza stretta, nessun riconoscimento ambiguo.
+$assert(account_tracker_transfer_quantities_match(20000.0, 20000.0), 'trasferimento stessa quantita');
+$assert(account_tracker_transfer_quantities_match(20000.0, 20019.0), 'trasferimento entro tolleranza');
+$assert(!account_tracker_transfer_quantities_match(20000.0, 19900.0), 'trasferimento ambiguo rifiutato');
+
+// Priorita: il manuale puo fare override senza distruggere il payload Fineco originario.
+$effective = fineco_patrimony_effective_values(
+    ['fineco_total_assets' => 191773.21, 'available_balance' => 3712.97, 'credit_used_amount' => 0.0],
+    ['available_balance' => 3700.00]
+);
+$assert((float) $effective['fineco_total_assets'] === 191773.21, 'valore Fineco conservato');
+$assert((float) $effective['available_balance'] === 3700.0, 'override manuale');
+$assert((float) $effective['credit_used_amount'] === 0.0, 'fido importato conservato');
+$assert(fineco_patrimony_effective_values(['liquidity_total' => 3779.03], [])['liquidity_total'] === 3779.03, 'import patrimonio senza override');
+$assert(fineco_patrimony_effective_values([], ['accounting_balance' => -50.0])['accounting_balance'] === -50.0, 'snapshot manuale senza import');
+
+// Il consolidamento di uno stesso ISIN in due dossier e una somma, non una duplicazione.
+$sameIsin = [
+    ['quantity' => 20000.0, 'market_value' => 19752.73],
+    ['quantity' => 0.0, 'market_value' => 0.0],
+];
+$assert(abs(array_sum(array_column($sameIsin, 'market_value')) - 19752.73) < 0.01, 'isin multi dossier consolidato');
+$assert(abs(array_sum(array_column($sameIsin, 'quantity')) - 20000.0) < 0.01, 'quantita trasferita preservata');
+
+// Fido assente e liquidita parziale non impediscono la modalita solo portafoglio.
+$assert(account_tracker_reconstructed_wealth(100.0, null, 0.0)['gross'] === null, 'liquidita mancante non inventata');
+$assert(account_tracker_reconstructed_wealth(null, 100.0, 0.0)['gross'] === null, 'portafoglio mancante non inventato');
+
+// Estremi dello storico: i null non vengono interpretati come zeri.
+$historicalRows = [
+    ['snapshot_date' => '2026-08-18', 'fineco_total_assets' => null],
+    ['snapshot_date' => '2026-08-19', 'fineco_total_assets' => 190000.00],
+    ['snapshot_date' => '2026-08-20', 'fineco_total_assets' => 191773.21],
+];
+$assert(account_tracker_history_extreme($historicalRows, 'fineco_total_assets', 'max')['date'] === '2026-08-20', 'massimo patrimonio storico');
+$assert(account_tracker_history_extreme($historicalRows, 'fineco_total_assets', 'min')['date'] === '2026-08-19', 'minimo patrimonio storico');
+
+// Riconciliazione dossier: ordinario + pegno sono componenti, non patrimonio aggiuntivo.
+$dossiers = [168241.45, 19752.73];
+$assert(abs(array_sum($dossiers) - 187994.18) < 0.01, 'totale dossier Fineco');
+$assert(abs(191773.21 - array_sum($dossiers) - 3779.03) < 0.01, 'nessuna duplicazione dossier patrimonio');
+
+echo "OK: {$checks} controlli logici superati\n";

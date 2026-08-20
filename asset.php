@@ -1,8 +1,10 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/lib/account_tracker.php';
 
 $pageTitle = 'Dettaglio titolo';
 $pdo = db();
+$accountTrackerReady = account_tracker_schema_ready($pdo);
 
 $assetId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if ($assetId <= 0) {
@@ -19,24 +21,22 @@ if (!$asset) {
     redirect('/assets.php');
 }
 
-$historyStmt = $pdo->prepare(
-    'SELECT
-        s.id AS snapshot_id,
-        s.snapshot_date,
-        s.total_market_value AS snapshot_total_market_value,
-        p.quantity,
-        p.avg_load_price,
-        p.current_price,
-        p.cost_basis,
-        p.market_value,
-        p.unrealized_pnl,
-        p.weight_pct,
-        p.currency
-     FROM pf_snapshot_positions p
-     JOIN pf_snapshots s ON s.id = p.snapshot_id
-     WHERE p.asset_id = :asset_id
-     ORDER BY s.snapshot_date ASC, s.id ASC'
-);
+$historySql = 'SELECT s.id AS snapshot_id, s.snapshot_date, s.total_market_value AS snapshot_total_market_value,
+        SUM(p.quantity) AS quantity,
+        CASE WHEN SUM(p.quantity) <> 0 THEN SUM(p.avg_load_price * p.quantity) / SUM(p.quantity) ELSE 0 END AS avg_load_price,
+        CASE WHEN SUM(p.quantity) <> 0 THEN SUM(p.current_price * p.quantity) / SUM(p.quantity) ELSE 0 END AS current_price,
+        SUM(p.cost_basis) AS cost_basis, SUM(p.market_value) AS market_value, SUM(p.unrealized_pnl) AS unrealized_pnl,
+        CASE WHEN s.total_market_value > 0 THEN SUM(p.market_value) / s.total_market_value ELSE 0 END AS weight_pct,
+        MAX(p.currency) AS currency';
+if ($accountTrackerReady) {
+    $historySql .= ', GROUP_CONCAT(DISTINCT d.name ORDER BY d.sort_order SEPARATOR ", ") AS dossier_names';
+} else {
+    $historySql .= ', NULL AS dossier_names';
+}
+$historySql .= ' FROM pf_snapshot_positions p JOIN pf_snapshots s ON s.id=p.snapshot_id';
+if ($accountTrackerReady) { $historySql .= ' LEFT JOIN pf_dossiers d ON d.id=p.dossier_id'; }
+$historySql .= ' WHERE p.asset_id=:asset_id GROUP BY s.id,s.snapshot_date,s.total_market_value ORDER BY s.snapshot_date ASC,s.id ASC';
+$historyStmt = $pdo->prepare($historySql);
 $historyStmt->execute([':asset_id' => $assetId]);
 $history = $historyStmt->fetchAll();
 
@@ -306,6 +306,7 @@ include __DIR__ . '/partials/header.php';
                 <th>P/L</th>
                 <th>P/L %</th>
                 <th>Peso</th>
+                <?php if ($accountTrackerReady): ?><th>Dossier</th><?php endif; ?>
                 <th>Snapshot</th>
             </tr>
         </thead>
@@ -336,6 +337,7 @@ include __DIR__ . '/partials/header.php';
                     </td>
                     <td class="<?= $rowPnlPct >= 0 ? 'pos' : 'neg' ?>"><?= e($formatPct($rowPnlPct)) ?></td>
                     <td><?= e($formatPct(((float) $row['weight_pct']) * 100)) ?></td>
+                    <?php if ($accountTrackerReady): ?><td><?= e((string) ($row['dossier_names'] ?? 'Ordinario')) ?></td><?php endif; ?>
                     <td><a class="btn-link" href="<?= e(app_base_path()) ?>/snapshot.php?id=<?= (int) $row['snapshot_id'] ?>">Apri</a></td>
                 </tr>
             <?php endforeach; ?>

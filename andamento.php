@@ -36,16 +36,13 @@ $columns = $pdo->query(
 $rows = [];
 
 $history = $pdo->query(
-    'SELECT
-        s.snapshot_date,
-        p.asset_id,
-        p.quantity,
-        p.market_value,
-        p.unrealized_pnl
+    'SELECT s.snapshot_date, p.asset_id, SUM(p.quantity) AS quantity,
+            SUM(p.market_value) AS market_value, SUM(p.unrealized_pnl) AS unrealized_pnl
      FROM pf_snapshots s
      LEFT JOIN pf_snapshot_positions p ON p.snapshot_id = s.id
      LEFT JOIN pf_assets a ON a.id = p.asset_id
      WHERE p.asset_id IS NULL OR a.asset_type IN ("AZIONE", "ETF", "PAC")
+     GROUP BY s.id, s.snapshot_date, p.asset_id
      ORDER BY s.snapshot_date ASC, p.asset_id ASC'
 )->fetchAll();
 
