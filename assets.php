@@ -12,11 +12,15 @@ $positions = [];
 if ($latestSnapshotId > 0) {
     $stmtPositions = $pdo->prepare(
         'SELECT a.id AS asset_id, a.asset_type, a.name, a.isin, a.ticker, a.currency AS asset_currency,
-                p.market_value, p.weight_pct, p.currency AS position_currency
+                SUM(p.market_value) AS market_value,
+                CASE WHEN s.total_market_value > 0 THEN SUM(p.market_value) / s.total_market_value ELSE 0 END AS weight_pct,
+                MAX(p.currency) AS position_currency
          FROM pf_snapshot_positions p
          JOIN pf_assets a ON a.id = p.asset_id
+         JOIN pf_snapshots s ON s.id = p.snapshot_id
          WHERE p.snapshot_id = :snapshot_id
-         ORDER BY p.market_value DESC'
+         GROUP BY a.id, a.asset_type, a.name, a.isin, a.ticker, a.currency, s.total_market_value
+         ORDER BY market_value DESC'
     );
     $stmtPositions->execute([':snapshot_id' => $latestSnapshotId]);
     $positions = $stmtPositions->fetchAll();

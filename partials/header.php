@@ -26,6 +26,7 @@ $privacyUnlockSeconds = privacy_config()['unlock_seconds'];
             <a href="<?= e(app_base_path()) ?>/snapshots.php">Snapshot</a>
             <a href="<?= e(app_base_path()) ?>/compare.php">Confronto</a>
             <a href="<?= e(app_base_path()) ?>/assets.php">Strumenti</a>
+            <a href="<?= e(app_base_path()) ?>/account.php">Conto</a>
             <a href="<?= e(app_base_path()) ?>/earnings.php">Trimestrali</a>
             <a href="<?= e(app_base_path()) ?>/ai_report.php">Report AI</a>
             <a href="<?= e(app_base_path()) ?>/changelog.php">Changelog</a>

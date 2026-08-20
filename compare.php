@@ -81,8 +81,8 @@ if ($selectedA > 0 && $selectedB > 0) {
                     WHERE snapshot_id IN (:snapshot_a_ids, :snapshot_b_ids)
                 ) s
                 JOIN pf_assets a ON a.id = s.asset_id
-                LEFT JOIN pf_snapshot_positions p1 ON p1.asset_id = s.asset_id AND p1.snapshot_id = :snapshot_a_pos
-                LEFT JOIN pf_snapshot_positions p2 ON p2.asset_id = s.asset_id AND p2.snapshot_id = :snapshot_b_pos
+                LEFT JOIN (SELECT asset_id, SUM(quantity) AS quantity, SUM(market_value) AS market_value, SUM(unrealized_pnl) AS unrealized_pnl, SUM(market_value) / NULLIF((SELECT total_market_value FROM pf_snapshots WHERE id = :snapshot_a_total), 0) AS weight_pct FROM pf_snapshot_positions WHERE snapshot_id = :snapshot_a_pos GROUP BY asset_id) p1 ON p1.asset_id = s.asset_id
+                LEFT JOIN (SELECT asset_id, SUM(quantity) AS quantity, SUM(market_value) AS market_value, SUM(unrealized_pnl) AS unrealized_pnl, SUM(market_value) / NULLIF((SELECT total_market_value FROM pf_snapshots WHERE id = :snapshot_b_total), 0) AS weight_pct FROM pf_snapshot_positions WHERE snapshot_id = :snapshot_b_pos GROUP BY asset_id) p2 ON p2.asset_id = s.asset_id
                 ORDER BY ABS(COALESCE(p1.market_value, 0) - COALESCE(p2.market_value, 0)) DESC, a.name ASC
             ";
 
@@ -92,6 +92,8 @@ if ($selectedA > 0 && $selectedB > 0) {
                 ':snapshot_b_ids' => $selectedB,
                 ':snapshot_a_pos' => $selectedA,
                 ':snapshot_b_pos' => $selectedB,
+                ':snapshot_a_total' => $selectedA,
+                ':snapshot_b_total' => $selectedB,
             ]);
             $rows = $stmt->fetchAll();
 

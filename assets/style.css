@@ -2814,6 +2814,102 @@ tbody tr.snapshot-row-min:hover {
     background: #c43a4b;
 }
 
+.account-hero {
+    background: linear-gradient(110deg, #ffffff 0%, #f4fbfb 62%, #e8f3f8 100%);
+}
+
+.account-dossier-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.7rem;
+    margin-top: 0.9rem;
+}
+
+.account-dossier-card,
+.account-reconciliation,
+.account-imported-dossiers,
+.account-credit-summary {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #f8fbfc;
+    padding: 0.8rem 0.9rem;
+}
+
+.account-dossier-card {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.account-dossier-card span,
+.account-imported-dossiers span,
+.account-credit-summary {
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.account-reconciliation,
+.account-imported-dossiers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem 1rem;
+    align-items: baseline;
+    margin-top: 0.8rem;
+}
+
+.account-reconciliation-warning {
+    border-color: #e5b45b;
+    background: #fff8e7;
+}
+
+.account-imported-dossiers {
+    background: #f1f8fb;
+}
+
+.account-credit-summary {
+    margin-top: 0.4rem;
+}
+
+.account-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.account-period-value {
+    line-height: 1.35;
+}
+
+.account-period-value span {
+    color: var(--muted);
+    font-family: "Space Grotesk", "Segoe UI", Tahoma, sans-serif;
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+
+.account-history-table-wrap {
+    margin-top: 0.85rem;
+}
+
+.account-history-table {
+    min-width: 1250px;
+}
+
+.form-full {
+    grid-column: 1 / -1;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 17px;
+    height: 17px;
+    padding: 0;
+    accent-color: var(--primary);
+}
+
 .sortable {
     cursor: pointer;
     user-select: none;
@@ -2846,6 +2942,10 @@ tbody tr.snapshot-row-min:hover {
 }
 
 @media (max-width: 600px) {
+    .account-form {
+        grid-template-columns: 1fr;
+    }
+
     .runtime-summary-bar strong {
         width: 100%;
         font-size: 1.3rem;

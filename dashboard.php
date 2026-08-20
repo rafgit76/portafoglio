@@ -2,9 +2,12 @@
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/lib/fx.php';
 require_once __DIR__ . '/lib/news.php';
+require_once __DIR__ . '/lib/account_tracker.php';
 
 $pageTitle = 'Dashboard';
 $pdo = db();
+$accountTrackerReady = account_tracker_schema_ready($pdo);
+$accountMetrics = $accountTrackerReady ? account_tracker_patrimonial_metrics($pdo) : null;
 
 $period = $_GET['period'] ?? 'all';
 $allowedPeriods = ['1d', '1w', '1m', 'ytd', 'all'];
@@ -154,6 +157,19 @@ include __DIR__ . '/partials/header.php';
         </div>
     <?php endif; ?>
 </section>
+
+<?php if ($accountMetrics !== null && $accountMetrics['snapshot'] !== null): ?>
+<section class="panel account-dashboard-panel">
+    <div class="panel-head"><div><h2>Conto e patrimonio</h2><p class="tiny-note">Dati opzionali da export Patrimonio Fineco o inserimento manuale. Il credito non e patrimonio.</p></div><a class="btn-link" href="<?= e(app_base_path()) ?>/account.php">Apri conto</a></div>
+    <div class="cards">
+        <article class="card"><h3>Patrimonio Fineco</h3><p class="big"><?= $accountMetrics['snapshot']['fineco_total_assets'] !== null ? 'EUR ' . number_format((float) $accountMetrics['snapshot']['fineco_total_assets'], 2, ',', '.') : 'N/D' ?></p></article>
+        <article class="card"><h3>Liquidita propria</h3><p class="big"><?= $accountMetrics['snapshot']['liquidity_total'] !== null ? 'EUR ' . number_format((float) $accountMetrics['snapshot']['liquidity_total'], 2, ',', '.') : 'N/D' ?></p></article>
+        <article class="card"><h3>Saldo contabile</h3><p class="big <?= (float) ($accountMetrics['snapshot']['accounting_balance'] ?? 0) < 0 ? 'neg' : '' ?>"><?= $accountMetrics['snapshot']['accounting_balance'] !== null ? 'EUR ' . number_format((float) $accountMetrics['snapshot']['accounting_balance'], 2, ',', '.') : 'N/D' ?></p></article>
+        <article class="card"><h3>Saldo disponibile</h3><p class="big"><?= $accountMetrics['snapshot']['available_balance'] !== null ? 'EUR ' . number_format((float) $accountMetrics['snapshot']['available_balance'], 2, ',', '.') : 'N/D' ?></p><p class="tiny-note">Non e patrimonio</p></article>
+    </div>
+    <?php if ($accountMetrics['credit']['lines_count'] > 0): ?><div class="account-credit-summary">Linee di credito: accordato <?= $accountMetrics['credit']['agreed_amount'] !== null ? 'EUR ' . number_format((float) $accountMetrics['credit']['agreed_amount'], 2, ',', '.') : 'N/D' ?>, utilizzato <?= $accountMetrics['credit']['used_amount'] !== null ? 'EUR ' . number_format((float) $accountMetrics['credit']['used_amount'], 2, ',', '.') : 'N/D' ?>, disponibile <?= $accountMetrics['credit']['available_amount'] !== null ? 'EUR ' . number_format((float) $accountMetrics['credit']['available_amount'], 2, ',', '.') : 'N/D' ?>. Escluso dal patrimonio.</div><?php endif; ?>
+</section>
+<?php endif; ?>
 
 <?php if ($pnlExtremes['max'] !== null && $pnlExtremes['min'] !== null): ?>
 <section class="panel">

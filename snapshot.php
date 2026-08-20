@@ -1,8 +1,10 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/lib/account_tracker.php';
 
 $pageTitle = 'Dettaglio snapshot';
 $pdo = db();
+$accountTrackerReady = account_tracker_schema_ready($pdo);
 
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if ($id <= 0) {
@@ -19,13 +21,16 @@ if (!$snapshot) {
     redirect('/snapshots.php');
 }
 
-$posSt = $pdo->prepare(
-    'SELECT p.*, a.id AS asset_id, a.name, a.isin, a.ticker, a.asset_type
-     FROM pf_snapshot_positions p
-     JOIN pf_assets a ON a.id = p.asset_id
-     WHERE p.snapshot_id = :id
-     ORDER BY p.market_value DESC'
-);
+$positionSql = 'SELECT p.*, a.id AS asset_id, a.name, a.isin, a.ticker, a.asset_type';
+if ($accountTrackerReady) {
+    $positionSql .= ', d.name AS dossier_name, d.code AS dossier_origin, p.data_origin';
+}
+$positionSql .= ' FROM pf_snapshot_positions p JOIN pf_assets a ON a.id = p.asset_id';
+if ($accountTrackerReady) {
+    $positionSql .= ' LEFT JOIN pf_dossiers d ON d.id = p.dossier_id';
+}
+$positionSql .= ' WHERE p.snapshot_id = :id ORDER BY p.market_value DESC';
+$posSt = $pdo->prepare($positionSql);
 $posSt->execute([':id' => $id]);
 $positions = $posSt->fetchAll();
 
@@ -55,6 +60,7 @@ include __DIR__ . '/partials/header.php';
             <tr>
                 <th>Titolo</th>
                 <th>Tipo</th>
+                <?php if ($accountTrackerReady): ?><th>Dossier</th><?php endif; ?>
                 <th>ISIN</th>
                 <th>Q.ta</th>
                 <th>PMC</th>
@@ -70,6 +76,7 @@ include __DIR__ . '/partials/header.php';
             <tr>
                 <td><a class="btn-link" href="<?= e(app_base_path()) ?>/asset.php?id=<?= (int) $p['asset_id'] ?>"><?= e($p['name']) ?></a></td>
                 <td><?= e($p['asset_type']) ?></td>
+                <?php if ($accountTrackerReady): ?><td><?= e((string) ($p['dossier_name'] ?? 'Ordinario')) ?><br><span class="tiny-note"><?= e((string) ($p['data_origin'] ?? 'IMPORT_FINECO')) ?></span></td><?php endif; ?>
                 <td><?= e($p['isin'] ?? '-') ?></td>
                 <td><?= number_format((float) $p['quantity'], 2, ',', '.') ?></td>
                 <td><?= number_format((float) $p['avg_load_price'], 4, ',', '.') ?></td>
