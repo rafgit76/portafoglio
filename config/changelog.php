@@ -2,6 +2,17 @@
 
 return [
     [
+        'version' => '2.6.0',
+        'date' => '2026-08-21',
+        'title' => 'Profilo ufficiale Credit Lombard',
+        'changes' => [
+            'Registrati importo accordato, stato operativo, validita a revoca e data di attivazione risultanti dalla lettera di accettazione Fineco.',
+            'Aggiunti identificativi separati per conto collegato, conto a pegno e dossier a garanzia: conto e dossier restano entita logiche distinte anche quando condividono lo stesso numero Fineco.',
+            'Aggiunta la provenienza fineco_acceptance_letter con riferimento al documento sorgente.',
+            'La migrazione aggiorna soltanto l anagrafica della linea di credito e non modifica snapshot, posizioni, P/L o consolidamento.',
+        ],
+    ],
+    [
         'version' => '2.5.3',
         'date' => '2026-08-21',
         'title' => 'Conferma trasferimenti compatibile con Aruba',

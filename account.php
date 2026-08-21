@@ -146,6 +146,7 @@ $latestPortfolio = $pdo->query('SELECT id, snapshot_date, total_market_value, to
 $dossierTotals = $latestPortfolio ? account_tracker_snapshot_dossier_totals($pdo, (int) $latestPortfolio['id']) : [];
 $pendingTransfers = account_tracker_pending_transfers($pdo);
 $confirmedTransfers = account_tracker_confirmed_transfers($pdo);
+$creditLombardProfiles = account_tracker_credit_lombard_profiles($pdo);
 $warningThreshold = app_setting('account_reconciliation_warn_pct', null);
 $showReconciliationWarning = is_numeric($warningThreshold)
     && $metrics['difference_pct'] !== null
@@ -260,6 +261,25 @@ include __DIR__ . '/partials/header.php';
         <article class="card"><h3>Utilizzato</h3><p class="big <?= (float) ($metrics['credit']['used_amount'] ?? 0) > 0 ? 'neg' : '' ?>"><?= e($money($metrics['credit']['used_amount'] !== null ? (float) $metrics['credit']['used_amount'] : null)) ?></p></article>
         <article class="card"><h3>Disponibile</h3><p class="big"><?= e($money($metrics['credit']['available_amount'] !== null ? (float) $metrics['credit']['available_amount'] : null)) ?></p><p class="tiny-note">Escluso dal patrimonio</p></article>
     </div>
+    <?php foreach ($creditLombardProfiles as $profile): ?>
+        <div class="credit-profile">
+            <div class="credit-profile-head">
+                <div><p class="eyebrow">RAPPORTO UFFICIALE</p><h3><?= e($profile['credit_line_type']) ?></h3></div>
+                <span class="status-pill <?= $profile['status_code'] === 'ACTIVE' ? 'status-pill-success' : '' ?>"><?= e($profile['status']) ?></span>
+            </div>
+            <div class="credit-profile-metrics">
+                <div><span>Importo accordato</span><strong><?= $profile['amount_granted'] !== null ? 'EUR ' . number_format((float) $profile['amount_granted'], 2, ',', '.') : 'Dato non disponibile' ?></strong></div>
+                <div><span>Validita</span><strong><?= e($profile['validity_type']) ?></strong></div>
+                <div><span>Data attivazione</span><strong><?= e((string) ($profile['activation_date'] ?? 'Dato non disponibile')) ?></strong></div>
+            </div>
+            <div class="credit-profile-relations">
+                <?php foreach ($profile['relations'] as $relation): ?>
+                    <div data-entity-type="<?= e($relation['entity_type']) ?>"><span><?= e($relation['label']) ?></span><strong><?= e((string) ($relation['identifier'] ?? 'Dato non disponibile')) ?></strong></div>
+                <?php endforeach; ?>
+            </div>
+            <p class="tiny-note">Fonte: <?= e($profile['data_origin_label']) ?><?= $profile['source_document_name'] ? ' - ' . e($profile['source_document_name']) : '' ?>. Il conto a pegno e il dossier a garanzia restano rapporti distinti.</p>
+        </div>
+    <?php endforeach; ?>
 </section>
 <?php endif; ?>
 

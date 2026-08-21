@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.5.3`
+Versione corrente: `2.6.0`
 
 ## Credit Lombard e trasferimenti interni documentati
 
@@ -17,6 +17,8 @@ Prima dell import di entrambi i dossier l app mostra un riepilogo con dossier ri
 Non e previsto OCR automatico delle contabili PDF su Aruba: il riferimento al documento, le date e gli importi tecnici vengono registrati come evidenza dichiarata e verificabile.
 
 Per aggiornare un database gia alla versione 2.4.0, esporta prima un backup completo e importa una volta `sql/migration_2_5_0_documented_internal_transfers.sql` tramite phpMyAdmin.
+
+Per registrare il profilo ufficiale del rapporto Credit Lombard, dopo il backup importa una volta `sql/migration_2_6_0_credit_lombard_profile.sql`. La migrazione completa la linea di credito con validita, rapporti collegati e provenienza documentale senza modificare snapshot, posizioni o calcoli del portafoglio.
 
 ## Deploy (FTP)
 

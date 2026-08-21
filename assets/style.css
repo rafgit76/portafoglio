@@ -2980,6 +2980,109 @@ tbody tr.snapshot-row-min:hover {
     margin-top: 0.4rem;
 }
 
+.credit-profile {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+}
+
+.credit-profile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.credit-profile-head h3,
+.credit-profile-head .eyebrow {
+    margin: 0;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 0.3rem 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #f6f8fa;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.status-pill-success {
+    border-color: #a9d8bd;
+    background: #eaf7f0;
+    color: #126a3a;
+}
+
+.credit-profile-metrics,
+.credit-profile-relations {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.credit-profile-relations {
+    margin-top: 0.65rem;
+}
+
+.credit-profile-metrics > div,
+.credit-profile-relations > div {
+    display: grid;
+    gap: 0.3rem;
+    min-width: 0;
+    padding: 0.75rem 0.85rem;
+    border-right: 1px solid var(--line);
+    background: #f8fbfc;
+}
+
+.credit-profile-metrics > div:last-child,
+.credit-profile-relations > div:last-child {
+    border-right: 0;
+}
+
+.credit-profile-metrics span,
+.credit-profile-relations span {
+    color: var(--muted);
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.credit-profile-metrics strong,
+.credit-profile-relations strong {
+    overflow-wrap: anywhere;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 1rem;
+}
+
+.credit-profile > .tiny-note {
+    margin: 0.65rem 0 0;
+}
+
+@media (max-width: 760px) {
+    .credit-profile-metrics,
+    .credit-profile-relations {
+        grid-template-columns: 1fr;
+    }
+
+    .credit-profile-metrics > div,
+    .credit-profile-relations > div {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .credit-profile-metrics > div:last-child,
+    .credit-profile-relations > div:last-child {
+        border-bottom: 0;
+    }
+}
+
 .upload-confirmation {
     border-color: #91d5cf;
 }

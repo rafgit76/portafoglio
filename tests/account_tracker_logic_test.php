@@ -80,6 +80,39 @@ $assert(abs((float) $lombardCurrent['own_liquidity_adjusted'] - 760.76) < 0.01, 
 $assert(account_tracker_effective_credit_used(12000.0, 0.0, 12000.0) === 0.0, 'fido Lombard 12000 non utilizzato');
 $assert(abs((726.44 - 31.67 + 12000.0) - 12694.77) < 0.01, 'controllo saldo disponibile con fido 12000');
 
+// Lettera Fineco del 21/08/2026: profilo ufficiale del rapporto Credit Lombard.
+$officialCreditLine = account_tracker_credit_line_profile([
+    'id' => 1,
+    'name' => 'Credit Lombard Fineco',
+    'credit_type' => 'CREDIT_LOMBARD',
+    'status' => 'ACTIVE',
+    'agreed_amount' => 12000.0,
+    'validity_type' => 'REVOCABLE',
+    'linked_main_account_id' => '3274177',
+    'pledge_account_id' => '5243936',
+    'pledge_dossier_id' => '5243936',
+    'activation_date' => '2026-08-21',
+    'data_origin' => 'fineco_acceptance_letter',
+    'source_document_name' => 'lettera-accettazione-140821.pdf',
+]);
+$assert($officialCreditLine['credit_line_type'] === 'Credit Lombard', 'tipo Credit Lombard ufficiale');
+$assert($officialCreditLine['status'] === 'Operativo', 'Credit Lombard operativo');
+$assert((float) $officialCreditLine['amount_granted'] === 12000.0, 'Credit Lombard accordato 12000');
+$assert($officialCreditLine['validity_type'] === 'A revoca', 'Credit Lombard a revoca');
+$assert($officialCreditLine['linked_main_account_id'] === '3274177', 'conto principale Credit Lombard');
+$assert($officialCreditLine['pledge_account_id'] === '5243936', 'conto a pegno Credit Lombard');
+$assert($officialCreditLine['pledge_dossier_id'] === '5243936', 'dossier a garanzia Credit Lombard');
+$assert($officialCreditLine['activation_date'] === '2026-08-21', 'data attivazione Credit Lombard');
+$relationsByType = array_column($officialCreditLine['relations'], null, 'entity_type');
+$assert(isset($relationsByType['PLEDGE_ACCOUNT'], $relationsByType['PLEDGE_DOSSIER']), 'conto a pegno e dossier sono tipi distinti');
+$assert($relationsByType['PLEDGE_ACCOUNT']['identifier'] === $relationsByType['PLEDGE_DOSSIER']['identifier'], 'rapporti distinti possono condividere il numero Fineco');
+$assert($officialCreditLine['data_origin'] === 'fineco_acceptance_letter', 'provenienza lettera Fineco');
+$creditProfileMigration = file_get_contents(__DIR__ . '/../sql/migration_2_6_0_credit_lombard_profile.sql');
+$assert(is_string($creditProfileMigration) && !str_contains($creditProfileMigration, 'UPDATE pf_snapshots'), 'migrazione profilo non aggiorna snapshot portafoglio');
+$assert(!str_contains((string) $creditProfileMigration, 'UPDATE pf_snapshot_positions'), 'migrazione profilo non aggiorna posizioni');
+$assert(!str_contains((string) $creditProfileMigration, 'pf_credit_line_snapshots'), 'migrazione profilo non crea snapshot del fido');
+$assert(abs(($mainAfterTransfer['cost_basis'] + $lombardExport['cost_basis']) - 138291.56) < 0.01, 'profilo ufficiale non altera carico consolidato');
+
 // Priorita: il manuale puo fare override senza distruggere il payload Fineco originario.
 $effective = fineco_patrimony_effective_values(
     ['fineco_total_assets' => 191773.21, 'available_balance' => 3712.97, 'credit_used_amount' => 0.0],
