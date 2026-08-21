@@ -2,6 +2,18 @@
 
 return [
     [
+        'version' => '2.4.0',
+        'date' => '2026-08-21',
+        'title' => 'Patrimonio depurato dal credito disponibile',
+        'changes' => [
+            'Adeguata l\'importazione Patrimonio Fineco al file post-attivazione Credit Lombard: acquisiti portafoglio totale, liquidita prenotata, fidi e valori dossier effettivamente presenti.',
+            'Separati Patrimonio Fineco e Patrimonio netto rettificato: il secondo sottrae esclusivamente il fido ancora disponibile, mai il fido accordato in modo automatico.',
+            'Aggiunte Liquidita Fineco e Liquidita propria rettificata, con credito disponibile esplicitamente escluso dalla ricchezza rappresentata dall\'app.',
+            'Aggiornati dashboard, Conto, storico e report AI per distinguere sempre patrimonio, capacita di spesa, saldi e credito.',
+            'Aggiunta la migrazione SQL 2.4.0, solo incrementale e senza modifiche agli snapshot storici gia registrati.',
+        ],
+    ],
+    [
         'version' => '2.3.1',
         'date' => '2026-08-21',
         'title' => 'Attesa e coerenza report patrimonio',

@@ -12,15 +12,17 @@ final class FinecoPatrimonyParser
         'saldo contabile' => 'accounting_balance',
         'saldo disponibile' => 'available_balance',
         'totale liquidita' => 'liquidity_total',
+        'liquidita prenotata' => 'reserved_liquidity',
+        'conto credit lombard' => 'credit_lombard_account',
         'totale multicurrency' => 'multicurrency_amount',
         'fido accordato' => 'credit_agreed_amount',
+        'fido totale' => 'credit_agreed_amount',
         'fido utilizzato' => 'credit_used_amount',
         'fido disponibile' => 'credit_available_amount',
         'totale portafoglio' => 'fineco_portfolio_total',
     ];
 
     private const DETAIL_FIELDS = [
-        'liquidita prenotata',
         'utilizzo carta di debito',
         'ritenute fiscali',
         'totale operazioni in corso',
@@ -171,10 +173,13 @@ function import_fineco_patrimony_spreadsheet(string $path, string $sourceFileNam
             $manualOverrides = is_array($decoded) ? $decoded : [];
         }
         $effective = fineco_patrimony_effective_values($parsed['values'], $manualOverrides);
-        $fields = ['fineco_total_assets','liquidity_total','accounting_balance','available_balance','multicurrency_amount','credit_agreed_amount','credit_used_amount','credit_available_amount'];
+        $fields = ['fineco_total_assets','fineco_portfolio_total','liquidity_total','reserved_liquidity','accounting_balance','available_balance','credit_lombard_account','multicurrency_amount','credit_agreed_amount','credit_used_amount','credit_available_amount'];
+        $adjustments = account_tracker_patrimonial_adjustments($effective);
         $parameters = [':snapshot_date' => $snapshotDate, ':source_file_name' => $sourceFileName, ':imported_values_json' => json_encode($parsed['values'], JSON_UNESCAPED_UNICODE), ':manual_overrides_json' => json_encode($manualOverrides, JSON_UNESCAPED_UNICODE), ':notes' => null];
         foreach ($fields as $field) { $parameters[':' . $field] = $effective[$field] ?? null; }
-        $statement = $pdo->prepare('INSERT INTO pf_patrimonial_snapshots (snapshot_date,fineco_total_assets,liquidity_total,accounting_balance,available_balance,multicurrency_amount,credit_agreed_amount,credit_used_amount,credit_available_amount,imported_values_json,manual_overrides_json,source_file_name,notes,data_origin) VALUES (:snapshot_date,:fineco_total_assets,:liquidity_total,:accounting_balance,:available_balance,:multicurrency_amount,:credit_agreed_amount,:credit_used_amount,:credit_available_amount,:imported_values_json,:manual_overrides_json,:source_file_name,:notes,"IMPORT_FINECO") ON DUPLICATE KEY UPDATE fineco_total_assets=VALUES(fineco_total_assets), liquidity_total=VALUES(liquidity_total), accounting_balance=VALUES(accounting_balance), available_balance=VALUES(available_balance), multicurrency_amount=VALUES(multicurrency_amount), credit_agreed_amount=VALUES(credit_agreed_amount), credit_used_amount=VALUES(credit_used_amount), credit_available_amount=VALUES(credit_available_amount), imported_values_json=VALUES(imported_values_json), manual_overrides_json=VALUES(manual_overrides_json), source_file_name=VALUES(source_file_name), data_origin="IMPORT_FINECO"');
+        $parameters[':net_assets_adjusted'] = $adjustments['net_assets_adjusted'];
+        $parameters[':own_liquidity_adjusted'] = $adjustments['own_liquidity_adjusted'];
+        $statement = $pdo->prepare('INSERT INTO pf_patrimonial_snapshots (snapshot_date,fineco_total_assets,fineco_portfolio_total,liquidity_total,reserved_liquidity,accounting_balance,available_balance,credit_lombard_account,multicurrency_amount,credit_agreed_amount,credit_used_amount,credit_available_amount,net_assets_adjusted,own_liquidity_adjusted,imported_values_json,manual_overrides_json,source_file_name,notes,data_origin) VALUES (:snapshot_date,:fineco_total_assets,:fineco_portfolio_total,:liquidity_total,:reserved_liquidity,:accounting_balance,:available_balance,:credit_lombard_account,:multicurrency_amount,:credit_agreed_amount,:credit_used_amount,:credit_available_amount,:net_assets_adjusted,:own_liquidity_adjusted,:imported_values_json,:manual_overrides_json,:source_file_name,:notes,"IMPORT_FINECO") ON DUPLICATE KEY UPDATE fineco_total_assets=VALUES(fineco_total_assets), fineco_portfolio_total=VALUES(fineco_portfolio_total), liquidity_total=VALUES(liquidity_total), reserved_liquidity=VALUES(reserved_liquidity), accounting_balance=VALUES(accounting_balance), available_balance=VALUES(available_balance), credit_lombard_account=VALUES(credit_lombard_account), multicurrency_amount=VALUES(multicurrency_amount), credit_agreed_amount=VALUES(credit_agreed_amount), credit_used_amount=VALUES(credit_used_amount), credit_available_amount=VALUES(credit_available_amount), net_assets_adjusted=VALUES(net_assets_adjusted), own_liquidity_adjusted=VALUES(own_liquidity_adjusted), imported_values_json=VALUES(imported_values_json), manual_overrides_json=VALUES(manual_overrides_json), source_file_name=VALUES(source_file_name), data_origin="IMPORT_FINECO"');
         $statement->execute($parameters);
         $patrimonialId = (int) ($existing['id'] ?? $pdo->lastInsertId());
         if ($patrimonialId <= 0) {

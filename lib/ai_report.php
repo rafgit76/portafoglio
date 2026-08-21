@@ -728,8 +728,10 @@ function ai_report_account_metric_definitions(): array
 {
     return [
         'fineco_total_assets' => 'Patrimonio totale Fineco',
-        'consolidated_portfolio_value' => 'Portafoglio consolidato',
-        'liquidity_total' => 'Liquidita propria',
+        'net_assets_adjusted' => 'Patrimonio netto rettificato',
+        'consolidated_portfolio_value' => 'Portafoglio totale Fineco',
+        'liquidity_total' => 'Totale liquidita Fineco',
+        'own_liquidity_adjusted' => 'Liquidita propria rettificata',
         'reconstructed_gross' => 'Patrimonio ricostruito',
         'accounting_balance' => 'Saldo contabile',
         'available_balance' => 'Saldo disponibile',
@@ -752,19 +754,29 @@ function ai_report_account_snapshot_rows(PDO $pdo): array
     )->fetchAll();
 
     return array_map(static function (array $row): array {
-        $portfolioValue = $row['consolidated_portfolio_value'] !== null
+        $positionPortfolio = $row['consolidated_portfolio_value'] !== null
             ? (float) $row['consolidated_portfolio_value']
             : null;
-        $liquidity = $row['liquidity_total'] !== null ? (float) $row['liquidity_total'] : null;
-        $creditUsed = $row['credit_used_amount'] !== null ? (float) $row['credit_used_amount'] : null;
-        $wealth = account_tracker_reconstructed_wealth($portfolioValue, $liquidity, $creditUsed);
+        $portfolioValue = account_tracker_snapshot_decimal($row, 'fineco_portfolio_total') ?? $positionPortfolio;
+        $creditAvailable = account_tracker_snapshot_decimal($row, 'credit_available_amount');
+        $creditUsed = $row['credit_used_amount'] !== null
+            ? (float) $row['credit_used_amount']
+            : ($row['credit_agreed_amount'] !== null && $creditAvailable !== null ? (float) $row['credit_agreed_amount'] - $creditAvailable : null);
+        $adjustments = account_tracker_patrimonial_adjustments([
+            'fineco_total_assets' => account_tracker_snapshot_decimal($row, 'fineco_total_assets'),
+            'liquidity_total' => account_tracker_snapshot_decimal($row, 'liquidity_total'),
+            'credit_available_amount' => $creditAvailable,
+        ]);
+        $wealth = account_tracker_reconstructed_wealth($portfolioValue, $adjustments['own_liquidity_adjusted'], null);
 
         return [
             'id' => (int) $row['id'],
             'snapshot_date' => (string) $row['snapshot_date'],
-            'fineco_total_assets' => $row['fineco_total_assets'] !== null ? (float) $row['fineco_total_assets'] : null,
+            'fineco_total_assets' => account_tracker_snapshot_decimal($row, 'fineco_total_assets'),
+            'net_assets_adjusted' => $adjustments['net_assets_adjusted'],
             'consolidated_portfolio_value' => $portfolioValue,
-            'liquidity_total' => $liquidity,
+            'liquidity_total' => account_tracker_snapshot_decimal($row, 'liquidity_total'),
+            'own_liquidity_adjusted' => $adjustments['own_liquidity_adjusted'],
             'reconstructed_gross' => $wealth['gross'],
             'accounting_balance' => $row['accounting_balance'] !== null ? (float) $row['accounting_balance'] : null,
             'available_balance' => $row['available_balance'] !== null ? (float) $row['available_balance'] : null,
@@ -777,16 +789,16 @@ function ai_report_account_snapshot_rows(PDO $pdo): array
 
 function ai_report_account_metric_summary(array $rows, string $field): array
 {
-    $available = array_values(array_filter($rows, static fn(array $row): bool => $row[$field] !== null));
+    $available = array_values(array_filter($rows, static fn(array $row): bool => ($row[$field] ?? null) !== null));
     $firstRow = $rows[0] ?? null;
     $latestRow = $rows === [] ? null : $rows[count($rows) - 1];
-    $first = is_array($firstRow) && $firstRow[$field] !== null ? $firstRow : null;
-    $latest = is_array($latestRow) && $latestRow[$field] !== null ? $latestRow : null;
+    $first = is_array($firstRow) && ($firstRow[$field] ?? null) !== null ? $firstRow : null;
+    $latest = is_array($latestRow) && ($latestRow[$field] ?? null) !== null ? $latestRow : null;
     $min = null;
     $max = null;
 
     foreach ($available as $row) {
-        $value = (float) $row[$field];
+        $value = (float) ($row[$field] ?? 0);
         if ($min === null || $value < $min['value']) {
             $min = ['date' => (string) $row['snapshot_date'], 'value' => round($value, 2)];
         }
@@ -795,8 +807,8 @@ function ai_report_account_metric_summary(array $rows, string $field): array
         }
     }
 
-    $firstValue = $first === null ? null : round((float) $first[$field], 2);
-    $latestValue = $latest === null ? null : round((float) $latest[$field], 2);
+    $firstValue = $first === null ? null : round((float) ($first[$field] ?? 0), 2);
+    $latestValue = $latest === null ? null : round((float) ($latest[$field] ?? 0), 2);
 
     return [
         'first' => $firstValue,
@@ -932,8 +944,10 @@ function ai_report_build_account_verified_facts(array $historyPayload): string
 
     $lines[] = '';
     $lines[] = 'SEMANTICA VINCOLANTE';
-    $lines[] = '- Patrimonio totale Fineco e il valore riportato dall\'export patrimoniale Fineco.';
-    $lines[] = '- Patrimonio ricostruito somma soltanto portafoglio consolidato e liquidita propria, quando entrambi disponibili.';
+    $lines[] = '- Patrimonio totale Fineco e il valore riportato dall\'export patrimoniale Fineco e puo includere credito disponibile.';
+    $lines[] = '- Patrimonio netto rettificato, quando presente, e Patrimonio totale Fineco meno credito disponibile.';
+    $lines[] = '- Liquidita propria rettificata, quando presente, e Totale liquidita Fineco meno credito disponibile.';
+    $lines[] = '- Patrimonio ricostruito somma soltanto Portafoglio totale Fineco e Liquidita propria rettificata, quando entrambi disponibili.';
     $lines[] = '- Fido utilizzato e credito disponibile restano separati dal patrimonio e non devono essere sommati al patrimonio.';
     $lines[] = '- Saldo disponibile puo includere credito e non equivale automaticamente a patrimonio o liquidita propria.';
 
@@ -959,10 +973,12 @@ FONTI E NUMERI
 
 SEMANTICA OBBLIGATORIA
 - Il credito disponibile e una linea di credito, non e patrimonio e non va mai sommato al patrimonio.
+- Patrimonio totale Fineco e Totale liquidita Fineco possono includere credito disponibile.
+- Patrimonio netto rettificato e Liquidita propria rettificata sono gia calcolati dal codice PHP sottraendo esclusivamente il credito disponibile: non rifare calcoli.
 - Il fido utilizzato e un debito o utilizzo di credito separato dal patrimonio; non attribuirlo automaticamente a una specifica linea di credito.
 - Il saldo disponibile puo includere credito, prenotazioni o altre componenti: non chiamarlo patrimonio o liquidita propria.
 - Il saldo contabile puo essere negativo.
-- Il patrimonio ricostruito, quando presente, e un calcolo dell'app basato su portafoglio consolidato e liquidita propria; non sostituisce il patrimonio Fineco.
+- Il patrimonio ricostruito, quando presente, e un calcolo dell'app basato su portafoglio totale Fineco e liquidita propria rettificata; non sostituisce il valore Fineco riportato.
 - Non dedurre versamenti, prelievi, acquisti, vendite, interessi, fidi, operazioni prenotate o cause esterne se non sono esplicitamente presenti nei fatti verificati.
 
 INTERPRETAZIONE
@@ -989,7 +1005,7 @@ Struttura obbligatoria, nello stesso ordine:
 90-130 parole. Riporta periodo, valori patrimoniali disponibili e quadro generale, senza attribuire cause.
 
 ### Evoluzione di patrimonio e liquidita
-120-170 parole. Descrivi patrimonio Fineco, portafoglio consolidato, liquidita propria e patrimonio ricostruito soltanto quando presenti. Cita minimi o massimi rilevanti dai fatti verificati.
+120-170 parole. Descrivi patrimonio Fineco, patrimonio netto rettificato, portafoglio totale Fineco, liquidita Fineco, liquidita propria rettificata e patrimonio ricostruito soltanto quando presenti. Cita minimi o massimi rilevanti dai fatti verificati.
 
 ### Saldi e linee di credito
 100-140 parole. Distingui saldo contabile, saldo disponibile, fido utilizzato e credito disponibile. Non sommare credito e patrimonio.
@@ -1032,7 +1048,7 @@ Struttura obbligatoria, nello stesso ordine:
 Massimo 60 parole. Descrivi il quadro senza attribuire cause.
 
 ### Tabella patrimoniale
-Scrivi una sola frase introduttiva, poi una tabella Markdown con una riga per ciascuna voce presente nei FATTI VERIFICATI: Patrimonio totale Fineco, Portafoglio consolidato, Liquidita propria, Patrimonio ricostruito, Saldo contabile, Saldo disponibile, Fido utilizzato e Credito disponibile. Ometti soltanto le voci non disponibili in entrambi gli snapshot.
+Scrivi una sola frase introduttiva, poi una tabella Markdown con una riga per ciascuna voce presente nei FATTI VERIFICATI: Patrimonio totale Fineco, Patrimonio netto rettificato, Portafoglio totale Fineco, Totale liquidita Fineco, Liquidita propria rettificata, Patrimonio ricostruito, Saldo contabile, Saldo disponibile, Fido utilizzato e Credito disponibile. Ometti soltanto le voci non disponibili in entrambi gli snapshot.
 | Voce | Snapshot precedente | Snapshot piu recente | Delta |
 |---|---:|---:|---:|
 
@@ -1991,7 +2007,7 @@ function ai_report_account_required_facts(array $historyPayload, bool $includeDe
         ai_report_format_date_it((string) ($dateRange['to'] ?? '')),
     ];
 
-    foreach (['fineco_total_assets', 'reconstructed_gross', 'liquidity_total', 'accounting_balance'] as $field) {
+    foreach (['fineco_total_assets', 'net_assets_adjusted', 'consolidated_portfolio_value', 'own_liquidity_adjusted', 'accounting_balance'] as $field) {
         $metric = is_array($metrics[$field] ?? null) ? $metrics[$field] : [];
         if (($metric['first'] ?? null) !== null && ($metric['latest'] ?? null) !== null) {
             $required[] = 'EUR ' . ai_report_format_number_it((float) $metric['first']);

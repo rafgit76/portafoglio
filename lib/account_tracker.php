@@ -21,6 +21,18 @@ function account_tracker_schema_ready(?PDO $pdo = null): bool
                 return $ready = false;
             }
         }
+        $requiredPatrimonialColumns = [
+            'fineco_portfolio_total',
+            'reserved_liquidity',
+            'net_assets_adjusted',
+            'own_liquidity_adjusted',
+        ];
+        $columns = $pdo->query('SHOW COLUMNS FROM `pf_patrimonial_snapshots`')->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($requiredPatrimonialColumns as $column) {
+            if (!in_array($column, $columns, true)) {
+                return $ready = false;
+            }
+        }
     } catch (Throwable) {
         return $ready = false;
     }
@@ -336,6 +348,81 @@ function account_tracker_reconstructed_wealth(?float $portfolioValue, ?float $li
     ];
 }
 
+function account_tracker_snapshot_decimal(array $snapshot, string $field): ?float
+{
+    if (array_key_exists($field, $snapshot) && $snapshot[$field] !== null && $snapshot[$field] !== '') {
+        return (float) $snapshot[$field];
+    }
+
+    // Le prime importazioni 2.2 hanno gia conservato il payload Fineco: lo
+    // riutilizziamo in sola lettura per i nuovi campi, senza alterare lo storico.
+    foreach (['manual_overrides_json', 'imported_values_json'] as $jsonField) {
+        $decoded = json_decode((string) ($snapshot[$jsonField] ?? ''), true);
+        if (is_array($decoded) && array_key_exists($field, $decoded) && $decoded[$field] !== null && $decoded[$field] !== '') {
+            return (float) $decoded[$field];
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Fineco puo includere il credito disponibile nei totali esposti. Questi valori
+ * mantengono separati il dato Fineco, la liquidita depurata e il credito.
+ */
+function account_tracker_patrimonial_adjustments(array $values): array
+{
+    $finecoTotal = isset($values['fineco_total_assets']) && $values['fineco_total_assets'] !== null
+        ? (float) $values['fineco_total_assets']
+        : null;
+    $liquidityFineco = isset($values['liquidity_total']) && $values['liquidity_total'] !== null
+        ? (float) $values['liquidity_total']
+        : null;
+    $creditAvailable = isset($values['credit_available_amount']) && $values['credit_available_amount'] !== null
+        ? (float) $values['credit_available_amount']
+        : null;
+
+    return [
+        'net_assets_adjusted' => $finecoTotal !== null && $creditAvailable !== null
+            ? $finecoTotal - $creditAvailable
+            : null,
+        'own_liquidity_adjusted' => $liquidityFineco !== null && $creditAvailable !== null
+            ? $liquidityFineco - $creditAvailable
+            : null,
+    ];
+}
+
+function account_tracker_credit_values_from_snapshot(array $snapshot, PDO $pdo): array
+{
+    $hasImportedCredit = $snapshot['credit_agreed_amount'] !== null
+        || $snapshot['credit_used_amount'] !== null
+        || $snapshot['credit_available_amount'] !== null;
+    if (!$hasImportedCredit) {
+        return account_tracker_credit_summary($pdo, (string) $snapshot['snapshot_date']);
+    }
+
+    $agreed = $snapshot['credit_agreed_amount'] !== null ? (float) $snapshot['credit_agreed_amount'] : null;
+    $available = $snapshot['credit_available_amount'] !== null ? (float) $snapshot['credit_available_amount'] : null;
+    $used = account_tracker_effective_credit_used(
+        $agreed,
+        $snapshot['credit_used_amount'] !== null ? (float) $snapshot['credit_used_amount'] : null,
+        $available
+    );
+
+    return [
+        'agreed_amount' => $agreed,
+        'used_amount' => $used,
+        'available_amount' => $available,
+        'lines_count' => 1,
+        'data_origin' => (string) ($snapshot['data_origin'] ?? 'IMPORT_FINECO'),
+    ];
+}
+
+function account_tracker_effective_credit_used(?float $agreed, ?float $used, ?float $available): ?float
+{
+    return $used ?? ($agreed !== null && $available !== null ? $agreed - $available : null);
+}
+
 /**
  * Restituisce un estremo di una serie storica senza inventare valori mancanti.
  * Il campo data resta quello della riga sorgente, utile per badge e grafici.
@@ -382,39 +469,49 @@ function account_tracker_patrimonial_metrics(PDO $pdo): array
     );
     $portfolioStatement->execute([':snapshot_date' => $patrimonial['snapshot_date']]);
     $portfolio = $portfolioStatement->fetch();
-    $portfolioValue = $portfolio ? (float) $portfolio['total_market_value'] : null;
-    $liquidity = $patrimonial['liquidity_total'] !== null ? (float) $patrimonial['liquidity_total'] : null;
-    $hasImportedCredit = $patrimonial['credit_agreed_amount'] !== null || $patrimonial['credit_used_amount'] !== null || $patrimonial['credit_available_amount'] !== null;
-    if ($hasImportedCredit) {
-        $agreed = $patrimonial['credit_agreed_amount'] !== null ? (float) $patrimonial['credit_agreed_amount'] : null;
-        $used = $patrimonial['credit_used_amount'] !== null ? (float) $patrimonial['credit_used_amount'] : null;
-        $available = $patrimonial['credit_available_amount'] !== null ? (float) $patrimonial['credit_available_amount'] : ($agreed !== null && $used !== null ? $agreed - $used : null);
-        $credit = ['agreed_amount' => $agreed, 'used_amount' => $used, 'available_amount' => $available, 'lines_count' => 1, 'data_origin' => (string) $patrimonial['data_origin']];
-    } else {
-        $credit = account_tracker_credit_summary($pdo, (string) $patrimonial['snapshot_date']);
-    }
-    $wealth = account_tracker_reconstructed_wealth($portfolioValue, $liquidity, $credit['used_amount'] !== null ? (float) $credit['used_amount'] : null);
+    $positionPortfolioValue = $portfolio ? (float) $portfolio['total_market_value'] : null;
+    $reportedPortfolioValue = account_tracker_snapshot_decimal($patrimonial, 'fineco_portfolio_total') ?? $positionPortfolioValue;
+    $credit = account_tracker_credit_values_from_snapshot($patrimonial, $pdo);
+    $adjustments = account_tracker_patrimonial_adjustments([
+        'fineco_total_assets' => account_tracker_snapshot_decimal($patrimonial, 'fineco_total_assets'),
+        'liquidity_total' => account_tracker_snapshot_decimal($patrimonial, 'liquidity_total'),
+        'credit_available_amount' => $credit['available_amount'],
+    ]);
+    $ownLiquidity = $adjustments['own_liquidity_adjusted'];
+    $wealth = account_tracker_reconstructed_wealth($reportedPortfolioValue, $ownLiquidity, null);
     $gross = $wealth['gross'];
-    $net = $wealth['net_adjusted'];
-    $finecoTotal = $patrimonial['fineco_total_assets'] !== null ? (float) $patrimonial['fineco_total_assets'] : null;
-    $difference = $finecoTotal !== null && $gross !== null ? $finecoTotal - $gross : null;
-    $differencePct = $difference !== null && abs($finecoTotal) > 0.000001 ? ($difference / $finecoTotal) * 100 : null;
+    $net = $adjustments['net_assets_adjusted'];
+    $finecoTotal = account_tracker_snapshot_decimal($patrimonial, 'fineco_total_assets');
+    $difference = $net !== null && $gross !== null ? $net - $gross : null;
+    $differencePct = $difference !== null && $net !== null && abs($net) > 0.000001 ? ($difference / $net) * 100 : null;
 
     $dossierValues = account_tracker_patrimonial_dossier_values($pdo, (int) $patrimonial['id']);
     $dossierTotal = $dossierValues === [] ? null : array_sum(array_map(static fn(array $row): float => (float) $row['amount'], $dossierValues));
-    $portfolioDossierDifference = $portfolioValue !== null && $dossierTotal !== null ? $portfolioValue - $dossierTotal : null;
+    $portfolioDossierDifference = $reportedPortfolioValue !== null && $dossierTotal !== null ? $reportedPortfolioValue - $dossierTotal : null;
+    $reservedLiquidity = account_tracker_snapshot_decimal($patrimonial, 'reserved_liquidity');
+    $availableBalanceCheck = $patrimonial['accounting_balance'] !== null && $reservedLiquidity !== null && $credit['available_amount'] !== null
+        ? (float) $patrimonial['accounting_balance'] + $reservedLiquidity + (float) $credit['available_amount']
+        : null;
+    $availableBalanceCheckDifference = $availableBalanceCheck !== null && $patrimonial['available_balance'] !== null
+        ? (float) $patrimonial['available_balance'] - $availableBalanceCheck
+        : null;
 
     return [
         'snapshot' => $patrimonial,
         'portfolio' => $portfolio ?: null,
+        'position_portfolio_value' => $positionPortfolioValue,
+        'reported_portfolio_value' => $reportedPortfolioValue,
         'credit' => $credit,
         'reconstructed_gross' => $gross,
         'net_adjusted' => $net,
+        'own_liquidity_adjusted' => $ownLiquidity,
         'difference_amount' => $difference,
         'difference_pct' => $differencePct,
         'imported_dossiers' => $dossierValues,
         'imported_dossier_total' => $dossierTotal,
         'portfolio_dossier_difference' => $portfolioDossierDifference,
+        'available_balance_check' => $availableBalanceCheck,
+        'available_balance_check_difference' => $availableBalanceCheckDifference,
     ];
 }
 

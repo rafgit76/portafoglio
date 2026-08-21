@@ -162,7 +162,7 @@ include __DIR__ . '/partials/header.php';
 <section class="panel narrow">
     <h2>Import patrimonio Fineco</h2>
     <p>Opzionale. Carica l'export Patrimonio Fineco per aggiornare automaticamente patrimonio, saldi, liquidita, fidi e valori dei dossier.</p>
-    <p class="tiny-note">Il credito disponibile non viene mai sommato al patrimonio. I dati manuali gia registrati per la stessa data restano come override.</p>
+    <p class="tiny-note">Fineco puo includere il credito disponibile nei propri totali: l'app lo conserva separato e calcola le metriche rettificate. I dati manuali gia registrati per la stessa data restano come override.</p>
     <form method="post" enctype="multipart/form-data" class="form-grid">
         <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
         <label>Data snapshot patrimonio<input type="date" name="snapshot_date" required value="<?= e(date('Y-m-d')) ?>"></label>

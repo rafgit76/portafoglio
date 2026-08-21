@@ -7,7 +7,7 @@ $pdo = db();
 if (!account_tracker_schema_ready($pdo)) {
     include __DIR__ . '/partials/header.php';
     ?>
-    <section class="panel empty-state"><h2>Modulo conto da inizializzare</h2><p>Importa prima <code>sql/migration_2_2_0_account_tracker.sql</code> tramite phpMyAdmin dopo un export completo del database.</p></section>
+    <section class="panel empty-state"><h2>Modulo conto da inizializzare</h2><p>Se il modulo non era mai stato installato, importa prima <code>sql/migration_2_2_0_account_tracker.sql</code>; poi importa <code>sql/migration_2_4_0_credit_lombard_semantics.sql</code> dopo un export completo del database.</p></section>
     <?php include __DIR__ . '/partials/footer.php'; exit;
 }
 

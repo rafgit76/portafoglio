@@ -23,7 +23,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $schemaReady) {
 
             $fields = [
                 'fineco_total_assets' => 'Patrimonio totale Fineco',
-                'liquidity_total' => 'Liquidita propria totale',
+                'fineco_portfolio_total' => 'Portafoglio totale Fineco',
+                'liquidity_total' => 'Totale liquidita Fineco',
+                'reserved_liquidity' => 'Liquidita prenotata',
                 'accounting_balance' => 'Saldo contabile',
                 'available_balance' => 'Saldo disponibile',
                 'credit_lombard_account' => 'Conto Credit Lombard',
@@ -60,17 +62,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $schemaReady) {
             }
             $effectiveValues = array_merge($importedValues, $manualOverrides);
             foreach ($fields as $field => $_label) {
-                $values[$field] = $effectiveValues[$field] ?? ($existing[$field] ?? null);
+                $values[$field] = $effectiveValues[$field] ?? (is_array($existing) ? ($existing[$field] ?? null) : null);
             }
+            $adjustments = account_tracker_patrimonial_adjustments($values);
 
             $statement = $pdo->prepare(
                 'INSERT INTO pf_patrimonial_snapshots
-                    (snapshot_date, fineco_total_assets, liquidity_total, accounting_balance, available_balance, credit_lombard_account, multicurrency_amount, other_liquidity, credit_agreed_amount, credit_used_amount, credit_available_amount, imported_values_json, manual_overrides_json, notes, data_origin)
+                    (snapshot_date, fineco_total_assets, fineco_portfolio_total, liquidity_total, reserved_liquidity, accounting_balance, available_balance, credit_lombard_account, multicurrency_amount, other_liquidity, credit_agreed_amount, credit_used_amount, credit_available_amount, net_assets_adjusted, own_liquidity_adjusted, imported_values_json, manual_overrides_json, notes, data_origin)
                  VALUES
-                    (:snapshot_date, :fineco_total_assets, :liquidity_total, :accounting_balance, :available_balance, :credit_lombard_account, :multicurrency_amount, :other_liquidity, :credit_agreed_amount, :credit_used_amount, :credit_available_amount, :imported_values_json, :manual_overrides_json, :notes, "MANUALE")
+                    (:snapshot_date, :fineco_total_assets, :fineco_portfolio_total, :liquidity_total, :reserved_liquidity, :accounting_balance, :available_balance, :credit_lombard_account, :multicurrency_amount, :other_liquidity, :credit_agreed_amount, :credit_used_amount, :credit_available_amount, :net_assets_adjusted, :own_liquidity_adjusted, :imported_values_json, :manual_overrides_json, :notes, "MANUALE")
                  ON DUPLICATE KEY UPDATE
                     fineco_total_assets = VALUES(fineco_total_assets),
+                    fineco_portfolio_total = VALUES(fineco_portfolio_total),
                     liquidity_total = VALUES(liquidity_total),
+                    reserved_liquidity = VALUES(reserved_liquidity),
                     accounting_balance = VALUES(accounting_balance),
                     available_balance = VALUES(available_balance),
                     credit_lombard_account = VALUES(credit_lombard_account),
@@ -79,6 +84,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $schemaReady) {
                     credit_agreed_amount = VALUES(credit_agreed_amount),
                     credit_used_amount = VALUES(credit_used_amount),
                     credit_available_amount = VALUES(credit_available_amount),
+                    net_assets_adjusted = VALUES(net_assets_adjusted),
+                    own_liquidity_adjusted = VALUES(own_liquidity_adjusted),
                     imported_values_json = VALUES(imported_values_json),
                     manual_overrides_json = VALUES(manual_overrides_json),
                     notes = VALUES(notes),
@@ -89,6 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $schemaReady) {
                 ':notes' => $notes !== '' ? $notes : null,
                 ':imported_values_json' => $importedValues === [] ? null : json_encode($importedValues, JSON_UNESCAPED_UNICODE),
                 ':manual_overrides_json' => $manualOverrides === [] ? null : json_encode($manualOverrides, JSON_UNESCAPED_UNICODE),
+                ':net_assets_adjusted' => $adjustments['net_assets_adjusted'],
+                ':own_liquidity_adjusted' => $adjustments['own_liquidity_adjusted'],
             ] + $values);
             set_flash('success', 'Snapshot patrimoniale salvato. I campi vuoti restano non disponibili.');
             redirect('/account.php?date=' . rawurlencode($date));
@@ -116,7 +125,7 @@ if (!$schemaReady) {
     ?>
     <section class="panel empty-state">
         <h2>Modulo conto da inizializzare</h2>
-        <p>Importa una sola volta <code>sql/migration_2_2_0_account_tracker.sql</code> tramite phpMyAdmin dopo avere esportato il database completo.</p>
+        <p>Se il modulo Conto non era mai stato installato, importa prima <code>sql/migration_2_2_0_account_tracker.sql</code>; poi, dopo un export completo del database, importa una sola volta <code>sql/migration_2_4_0_credit_lombard_semantics.sql</code>.</p>
         <p class="tiny-note">Fino alla migrazione l'app continua a funzionare come tracker del solo portafoglio.</p>
     </section>
     <?php
@@ -173,7 +182,7 @@ include __DIR__ . '/partials/header.php';
 <?php if ($latestPortfolio): ?>
 <section class="panel">
     <div class="panel-head">
-        <h2>Portafoglio consolidato</h2>
+        <h2>Portafoglio da import posizioni</h2>
         <span class="tiny-note">Snapshot <?= e((string) $latestPortfolio['snapshot_date']) ?>, import Fineco</span>
     </div>
     <div class="cards">
@@ -202,23 +211,32 @@ include __DIR__ . '/partials/header.php';
         <span class="tiny-note">Snapshot <?= e($originLabel((string) ($metrics['snapshot']['data_origin'] ?? ''))) ?> <?= e((string) $metrics['snapshot']['snapshot_date']) ?></span>
     </div>
     <div class="cards">
-        <article class="card"><h3>Patrimonio Fineco</h3><p class="big"><?= e($money($metrics['snapshot']['fineco_total_assets'] !== null ? (float) $metrics['snapshot']['fineco_total_assets'] : null)) ?></p><p class="tiny-note"><?= e($originLabel((string) ($metrics['snapshot']['data_origin'] ?? ''))) ?></p></article>
-        <article class="card"><h3>Liquidita propria</h3><p class="big"><?= e($money($metrics['snapshot']['liquidity_total'] !== null ? (float) $metrics['snapshot']['liquidity_total'] : null)) ?></p><p class="tiny-note">Non include fidi</p></article>
-        <article class="card"><h3>Patrimonio ricostruito</h3><p class="big"><?= e($money($metrics['reconstructed_gross'])) ?></p><p class="tiny-note">Portafoglio + liquidita propria</p></article>
-        <article class="card"><h3>Patrimonio netto rettificato</h3><p class="big"><?= e($money($metrics['net_adjusted'])) ?></p><p class="tiny-note">Lordo - debito utilizzato</p></article>
+        <article class="card"><h3 title="Valore riportato da Fineco, puo includere credito disponibile.">Patrimonio Fineco</h3><p class="big"><?= e($money($metrics['snapshot']['fineco_total_assets'] !== null ? (float) $metrics['snapshot']['fineco_total_assets'] : null)) ?></p><p class="tiny-note">Puo includere credito disponibile</p></article>
+        <article class="card"><h3 title="Patrimonio Fineco depurato dal credito o fido ancora disponibile.">Patrimonio netto rettificato</h3><p class="big"><?= e($money($metrics['net_adjusted'])) ?></p><p class="tiny-note">Fineco - credito disponibile</p></article>
+        <article class="card"><h3>Portafoglio totale Fineco</h3><p class="big"><?= e($money($metrics['reported_portfolio_value'])) ?></p><p class="tiny-note">Include i dossier riportati da Fineco</p></article>
+        <article class="card"><h3 title="Totale liquidita Fineco depurato dal credito ancora disponibile.">Liquidita propria rettificata</h3><p class="big"><?= e($money($metrics['own_liquidity_adjusted'])) ?></p><p class="tiny-note">Liquidita Fineco - credito disponibile</p></article>
     </div>
     <div class="cards account-secondary-cards">
         <article class="card"><h3>Saldo contabile</h3><p class="big <?= (float) ($metrics['snapshot']['accounting_balance'] ?? 0) < 0 ? 'neg' : '' ?>"><?= e($money($metrics['snapshot']['accounting_balance'] !== null ? (float) $metrics['snapshot']['accounting_balance'] : null)) ?></p><?php if ((float) ($metrics['snapshot']['accounting_balance'] ?? 0) < 0): ?><p class="tiny-note">Utilizzo di credito o fido in corso</p><?php endif; ?></article>
-        <article class="card"><h3>Saldo disponibile</h3><p class="big"><?= e($money($metrics['snapshot']['available_balance'] !== null ? (float) $metrics['snapshot']['available_balance'] : null)) ?></p><p class="tiny-note">Non e patrimonio</p></article>
+        <article class="card"><h3 title="Importo spendibile, comprensivo delle linee di credito.">Saldo disponibile</h3><p class="big"><?= e($money($metrics['snapshot']['available_balance'] !== null ? (float) $metrics['snapshot']['available_balance'] : null)) ?></p><p class="tiny-note">Puo includere linee di credito</p></article>
+        <article class="card"><h3>Liquidita prenotata</h3><p class="big <?= (float) ($metrics['snapshot']['reserved_liquidity'] ?? 0) < 0 ? 'neg' : '' ?>"><?= e($money($metrics['snapshot']['reserved_liquidity'] !== null ? (float) $metrics['snapshot']['reserved_liquidity'] : null)) ?></p><p class="tiny-note">Voce Fineco separata</p></article>
         <article class="card"><h3>Delta disponibile-contabile</h3><p class="big"><?php $deltaBalance = $metrics['snapshot']['available_balance'] !== null && $metrics['snapshot']['accounting_balance'] !== null ? (float) $metrics['snapshot']['available_balance'] - (float) $metrics['snapshot']['accounting_balance'] : null; ?><?= e($money($deltaBalance)) ?></p><p class="tiny-note">Solo informativo</p></article>
     </div>
     <?php if ($metrics['difference_amount'] !== null): ?>
         <div class="account-reconciliation <?= $showReconciliationWarning ? 'account-reconciliation-warning' : '' ?>">
             <strong>Controllo di coerenza</strong>
-            <span>Fineco <?= e($money((float) $metrics['snapshot']['fineco_total_assets'])) ?></span>
+            <span>Netto rettificato <?= e($money($metrics['net_adjusted'])) ?></span>
             <span>Ricostruito <?= e($money($metrics['reconstructed_gross'])) ?></span>
             <span>Differenza <?= e($money($metrics['difference_amount'])) ?> (<?= number_format((float) $metrics['difference_pct'], 2, ',', '.') ?>%)</span>
             <?php if ($showReconciliationWarning): ?><span>Superata la soglia configurata: nessun dato e stato modificato.</span><?php endif; ?>
+        </div>
+    <?php endif; ?>
+    <?php if ($metrics['available_balance_check'] !== null): ?>
+        <div class="account-reconciliation">
+            <strong>Controllo saldo disponibile</strong>
+            <span>Contabile + prenotata + credito disponibile <?= e($money($metrics['available_balance_check'])) ?></span>
+            <span>Saldo disponibile <?= e($money($metrics['snapshot']['available_balance'] !== null ? (float) $metrics['snapshot']['available_balance'] : null)) ?></span>
+            <span>Delta <?= e($money($metrics['available_balance_check_difference'])) ?>. Solo controllo, nessun valore e stato dedotto.</span>
         </div>
     <?php endif; ?>
     <?php if ($metrics['imported_dossiers']): ?>
@@ -254,7 +272,9 @@ include __DIR__ . '/partials/header.php';
         <input type="hidden" name="action" value="save_patrimonial_snapshot">
         <label>Data<input type="date" name="snapshot_date" required value="<?= e((string) $formValues['snapshot_date']) ?>"></label>
         <label>Patrimonio totale Fineco<input type="text" inputmode="decimal" name="fineco_total_assets" value="<?= e((string) ($formValues['fineco_total_assets'] ?? '')) ?>"></label>
-        <label>Liquidita propria totale<input type="text" inputmode="decimal" name="liquidity_total" value="<?= e((string) ($formValues['liquidity_total'] ?? '')) ?>"></label>
+        <label>Portafoglio totale Fineco<input type="text" inputmode="decimal" name="fineco_portfolio_total" value="<?= e((string) ($formValues['fineco_portfolio_total'] ?? '')) ?>"></label>
+        <label>Totale liquidita Fineco<input type="text" inputmode="decimal" name="liquidity_total" value="<?= e((string) ($formValues['liquidity_total'] ?? '')) ?>"></label>
+        <label>Liquidita prenotata<input type="text" inputmode="decimal" name="reserved_liquidity" value="<?= e((string) ($formValues['reserved_liquidity'] ?? '')) ?>"></label>
         <label>Saldo contabile<input type="text" inputmode="decimal" name="accounting_balance" value="<?= e((string) ($formValues['accounting_balance'] ?? '')) ?>"></label>
         <label>Saldo disponibile<input type="text" inputmode="decimal" name="available_balance" value="<?= e((string) ($formValues['available_balance'] ?? '')) ?>"></label>
         <label>Conto Credit Lombard<input type="text" inputmode="decimal" name="credit_lombard_account" value="<?= e((string) ($formValues['credit_lombard_account'] ?? '')) ?>"></label>

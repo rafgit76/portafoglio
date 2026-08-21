@@ -21,6 +21,20 @@ $assert(abs((float) $wealth['gross'] - 191773.21) < 0.01, 'patrimonio ricostruit
 $assert(abs((float) $wealth['net_adjusted'] - 188773.21) < 0.01, 'debito utilizzato separato');
 $assert((float) $wealth['gross'] !== 194773.21, 'fido disponibile escluso');
 
+// Credit Lombard Fineco: il patrimonio e la liquidita esposti includono il credito disponibile.
+$lombard = account_tracker_patrimonial_adjustments([
+    'fineco_total_assets' => 203188.95,
+    'liquidity_total' => 15760.75,
+    'credit_available_amount' => 15000.00,
+]);
+$assert(abs((float) $lombard['net_assets_adjusted'] - 188188.95) < 0.01, 'patrimonio netto rettificato post Lombard');
+$assert(abs((float) $lombard['own_liquidity_adjusted'] - 760.75) < 0.01, 'liquidita propria rettificata post Lombard');
+$assert((float) $lombard['net_assets_adjusted'] !== 203188.95, 'credito disponibile non rappresentato come ricchezza');
+$assert(account_tracker_effective_credit_used(15000.0, 0.0, 15000.0) === 0.0, 'fido usato Fineco prioritario');
+$assert(account_tracker_effective_credit_used(15000.0, null, 10000.0) === 5000.0, 'fido usato calcolato solo in assenza del dato diretto');
+$assert(account_tracker_effective_credit_used(15000.0, 4000.0, 10000.0) === 4000.0, 'fido usato diretto non sovrascritto dal controllo');
+$assert(abs((726.44 - 31.67 + 15000.0) - 15694.77) < 0.01, 'controllo saldo disponibile post Lombard');
+
 // Saldi negativi e campi opzionali sono valori leciti.
 $assert(account_tracker_optional_decimal('-125,50', 'saldo') === -125.5, 'saldo contabile negativo');
 $assert(account_tracker_optional_decimal('', 'campo') === null, 'campo patrimoniale facoltativo');
@@ -40,6 +54,14 @@ $assert((float) $effective['available_balance'] === 3700.0, 'override manuale');
 $assert((float) $effective['credit_used_amount'] === 0.0, 'fido importato conservato');
 $assert(fineco_patrimony_effective_values(['liquidity_total' => 3779.03], [])['liquidity_total'] === 3779.03, 'import patrimonio senza override');
 $assert(fineco_patrimony_effective_values([], ['accounting_balance' => -50.0])['accounting_balance'] === -50.0, 'snapshot manuale senza import');
+$legacyPatrimonial = [
+    'fineco_portfolio_total' => null,
+    'manual_overrides_json' => json_encode(['fineco_portfolio_total' => 187500.00]),
+    'imported_values_json' => json_encode(['fineco_portfolio_total' => 187428.20]),
+];
+$assert(account_tracker_snapshot_decimal($legacyPatrimonial, 'fineco_portfolio_total') === 187500.0, 'override storico prioritario sul payload importato');
+$legacyPatrimonial['manual_overrides_json'] = null;
+$assert(account_tracker_snapshot_decimal($legacyPatrimonial, 'fineco_portfolio_total') === 187428.2, 'payload storico Fineco riusato senza riscrittura');
 
 // Il consolidamento di uno stesso ISIN in due dossier e una somma, non una duplicazione.
 $sameIsin = [
@@ -124,6 +146,45 @@ $assert((float) $accountPayload['metrics']['credit_available_amount']['latest'] 
 $accountFacts = ai_report_build_account_verified_facts($accountPayload);
 $assert(str_contains($accountFacts, 'credito disponibile restano separati dal patrimonio'), 'semantica credito separata nel prompt');
 $assert(ai_report_type_label('account_weekly_changes', true) === 'Patrimonio settimanale', 'tipo archivio patrimonio settimanale');
+
+$postLombardRows = [
+    [
+        'id' => 10,
+        'snapshot_date' => '2026-08-20',
+        'fineco_total_assets' => 191773.21,
+        'net_assets_adjusted' => 179773.21,
+        'fineco_portfolio_total' => 187994.18,
+        'consolidated_portfolio_value' => 187994.18,
+        'liquidity_total' => 3779.03,
+        'own_liquidity_adjusted' => -8220.97,
+        'accounting_balance' => 766.58,
+        'available_balance' => 3712.97,
+        'credit_agreed_amount' => 12000.0,
+        'credit_used_amount' => 0.0,
+        'credit_available_amount' => 12000.0,
+        'data_origin' => 'IMPORT_FINECO',
+    ],
+    [
+        'id' => 11,
+        'snapshot_date' => '2026-08-21',
+        'fineco_total_assets' => 203188.95,
+        'net_assets_adjusted' => 188188.95,
+        'fineco_portfolio_total' => 187428.20,
+        'consolidated_portfolio_value' => 187428.20,
+        'liquidity_total' => 15760.75,
+        'own_liquidity_adjusted' => 760.75,
+        'accounting_balance' => 726.44,
+        'available_balance' => 15694.77,
+        'credit_agreed_amount' => 15000.0,
+        'credit_used_amount' => 0.0,
+        'credit_available_amount' => 15000.0,
+        'data_origin' => 'IMPORT_FINECO',
+    ],
+];
+$postLombardPayload = ai_report_build_account_payload_from_rows($postLombardRows, 'daily')['payload'];
+$assert((float) $postLombardPayload['metrics']['net_assets_adjusted']['latest'] === 188188.95, 'payload AI netto rettificato post Lombard');
+$assert((float) $postLombardPayload['metrics']['own_liquidity_adjusted']['latest'] === 760.75, 'payload AI liquidita propria rettificata post Lombard');
+$assert((float) $postLombardPayload['metrics']['consolidated_portfolio_value']['latest'] === 187428.20, 'payload AI usa portafoglio totale Fineco');
 
 // I delta AI devono usare le stesse cifre arrotondate mostrate nella tabella, non i decimali interni al database.
 $roundedDelta = ai_report_account_metric_summary([

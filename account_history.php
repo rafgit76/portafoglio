@@ -10,7 +10,7 @@ if (!account_tracker_schema_ready($pdo)) {
     ?>
     <section class="panel empty-state">
         <h2>Modulo conto da inizializzare</h2>
-        <p>Importa una sola volta <code>sql/migration_2_2_0_account_tracker.sql</code> tramite phpMyAdmin dopo avere esportato il database completo.</p>
+        <p>Se il modulo Conto non era mai stato installato, importa prima <code>sql/migration_2_2_0_account_tracker.sql</code>; poi, dopo un export completo del database, importa una sola volta <code>sql/migration_2_4_0_credit_lombard_semantics.sql</code>.</p>
         <p class="tiny-note">Fino alla migrazione l'app continua a funzionare come tracker del solo portafoglio.</p>
     </section>
     <?php
@@ -40,14 +40,21 @@ $historyStatement = $pdo->query(
 $history = $historyStatement->fetchAll();
 
 foreach ($history as &$row) {
-    $portfolioValue = $row['portfolio_market_value'] !== null ? (float) $row['portfolio_market_value'] : null;
-    $liquidity = $row['liquidity_total'] !== null ? (float) $row['liquidity_total'] : null;
-    $creditUsed = $row['credit_used_amount'] !== null ? (float) $row['credit_used_amount'] : null;
-    $wealth = account_tracker_reconstructed_wealth($portfolioValue, $liquidity, $creditUsed);
+    $positionPortfolio = $row['portfolio_market_value'] !== null ? (float) $row['portfolio_market_value'] : null;
+    $portfolioValue = account_tracker_snapshot_decimal($row, 'fineco_portfolio_total') ?? $positionPortfolio;
+    $creditAvailable = account_tracker_snapshot_decimal($row, 'credit_available_amount');
+    $adjustments = account_tracker_patrimonial_adjustments([
+        'fineco_total_assets' => account_tracker_snapshot_decimal($row, 'fineco_total_assets'),
+        'liquidity_total' => account_tracker_snapshot_decimal($row, 'liquidity_total'),
+        'credit_available_amount' => $creditAvailable,
+    ]);
+    $wealth = account_tracker_reconstructed_wealth($portfolioValue, $adjustments['own_liquidity_adjusted'], null);
 
     $row['portfolio_market_value_num'] = $portfolioValue;
+    $row['portfolio_position_value_num'] = $positionPortfolio;
+    $row['own_liquidity_adjusted_num'] = $adjustments['own_liquidity_adjusted'];
     $row['reconstructed_gross_num'] = $wealth['gross'];
-    $row['net_adjusted_num'] = $wealth['net_adjusted'];
+    $row['net_adjusted_num'] = $adjustments['net_assets_adjusted'];
 }
 unset($row);
 
@@ -62,18 +69,22 @@ $lastRow = min($totalSnapshots, $offset + count($rows));
 $latest = $history === [] ? null : $history[array_key_last($history)];
 $maxFineco = account_tracker_history_extreme($history, 'fineco_total_assets', 'max');
 $minFineco = account_tracker_history_extreme($history, 'fineco_total_assets', 'min');
+$maxNetAdjusted = account_tracker_history_extreme($history, 'net_adjusted_num', 'max');
+$minNetAdjusted = account_tracker_history_extreme($history, 'net_adjusted_num', 'min');
 $maxAvailable = account_tracker_history_extreme($history, 'available_balance', 'max');
 $minAccounting = account_tracker_history_extreme($history, 'accounting_balance', 'min');
 
 $chartLabels = array_map(static fn(array $row): string => (new DateTimeImmutable((string) $row['snapshot_date']))->format('d/m/Y'), $history);
 $chartFineco = array_map(static fn(array $row): ?float => $row['fineco_total_assets'] !== null ? round((float) $row['fineco_total_assets'], 2) : null, $history);
+$chartNetAdjusted = array_map(static fn(array $row): ?float => $row['net_adjusted_num'] !== null ? round((float) $row['net_adjusted_num'], 2) : null, $history);
 $chartPortfolio = array_map(static fn(array $row): ?float => $row['portfolio_market_value_num'] !== null ? round((float) $row['portfolio_market_value_num'], 2) : null, $history);
 $chartReconstructed = array_map(static fn(array $row): ?float => $row['reconstructed_gross_num'] !== null ? round((float) $row['reconstructed_gross_num'], 2) : null, $history);
 $chartAccounting = array_map(static fn(array $row): ?float => $row['accounting_balance'] !== null ? round((float) $row['accounting_balance'], 2) : null, $history);
 $chartAvailable = array_map(static fn(array $row): ?float => $row['available_balance'] !== null ? round((float) $row['available_balance'], 2) : null, $history);
 $chartLiquidity = array_map(static fn(array $row): ?float => $row['liquidity_total'] !== null ? round((float) $row['liquidity_total'], 2) : null, $history);
-$hasPatrimonyChart = count(array_filter(array_merge($chartFineco, $chartPortfolio, $chartReconstructed), static fn($value): bool => $value !== null)) > 0;
-$hasBalancesChart = count(array_filter(array_merge($chartAccounting, $chartAvailable, $chartLiquidity), static fn($value): bool => $value !== null)) > 0;
+$chartOwnLiquidity = array_map(static fn(array $row): ?float => $row['own_liquidity_adjusted_num'] !== null ? round((float) $row['own_liquidity_adjusted_num'], 2) : null, $history);
+$hasPatrimonyChart = count(array_filter(array_merge($chartFineco, $chartNetAdjusted, $chartPortfolio, $chartReconstructed), static fn($value): bool => $value !== null)) > 0;
+$hasBalancesChart = count(array_filter(array_merge($chartAccounting, $chartAvailable, $chartLiquidity, $chartOwnLiquidity), static fn($value): bool => $value !== null)) > 0;
 
 $money = static function (?float $value): string {
     return $value === null ? 'Dato non disponibile' : 'EUR ' . number_format($value, 2, ',', '.');
@@ -96,7 +107,7 @@ include __DIR__ . '/partials/header.php';
         <div>
             <p class="eyebrow">ARCHIVIO PATRIMONIALE</p>
             <h2>Andamento patrimonio</h2>
-            <p>Storico separato di patrimonio, liquidita e saldi. Il credito disponibile resta escluso dal patrimonio.</p>
+            <p>Storico separato di patrimonio, liquidita e saldi. Il credito disponibile resta separato dal patrimonio proprio.</p>
         </div>
         <div class="actions-inline">
             <a class="btn btn-secondary" href="<?= e(app_base_path()) ?>/account.php">Torna al conto</a>
@@ -118,11 +129,12 @@ include __DIR__ . '/partials/header.php';
     <section class="cards">
         <article class="card"><h3>Snapshot patrimoniali</h3><p class="big"><?= $totalSnapshots ?></p></article>
         <article class="card"><h3>Periodo</h3><p class="big account-period-value"><?= e((new DateTimeImmutable((string) $history[0]['snapshot_date']))->format('d/m/Y')) ?><br><span>al <?= e((new DateTimeImmutable((string) $latest['snapshot_date']))->format('d/m/Y')) ?></span></p></article>
-        <article class="card"><h3>Ultimo patrimonio Fineco</h3><p class="big"><?= e($money($latest['fineco_total_assets'] !== null ? (float) $latest['fineco_total_assets'] : null)) ?></p></article>
+        <article class="card"><h3>Ultimo patrimonio Fineco</h3><p class="big"><?= e($money($latest['fineco_total_assets'] !== null ? (float) $latest['fineco_total_assets'] : null)) ?></p><p class="tiny-note">Puo includere credito</p></article>
+        <article class="card"><h3>Ultimo netto rettificato</h3><p class="big"><?= e($money($latest['net_adjusted_num'])) ?></p><p class="tiny-note">Fineco - credito disponibile</p></article>
         <article class="card"><h3>Ultimo saldo contabile</h3><p class="big <?= (float) ($latest['accounting_balance'] ?? 0) < 0 ? 'neg' : '' ?>"><?= e($money($latest['accounting_balance'] !== null ? (float) $latest['accounting_balance'] : null)) ?></p></article>
     </section>
 
-    <?php if ($maxFineco !== null || $minFineco !== null || $maxAvailable !== null || $minAccounting !== null): ?>
+    <?php if ($maxFineco !== null || $minFineco !== null || $maxNetAdjusted !== null || $minNetAdjusted !== null || $maxAvailable !== null || $minAccounting !== null): ?>
     <section class="panel">
         <div class="panel-head">
             <h2>Massimi e minimi storici</h2>
@@ -131,6 +143,8 @@ include __DIR__ . '/partials/header.php';
         <div class="cards">
             <article class="card"><h3>Massimo patrimonio Fineco</h3><p class="big pos"><?= e($money($maxFineco['value'] ?? null)) ?></p><p class="tiny-note"><?= $maxFineco !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($maxFineco['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
             <article class="card"><h3>Minimo patrimonio Fineco</h3><p class="big <?= (($minFineco['value'] ?? 0) < 0) ? 'neg' : '' ?>"><?= e($money($minFineco['value'] ?? null)) ?></p><p class="tiny-note"><?= $minFineco !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($minFineco['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
+            <article class="card"><h3>Massimo netto rettificato</h3><p class="big pos"><?= e($money($maxNetAdjusted['value'] ?? null)) ?></p><p class="tiny-note"><?= $maxNetAdjusted !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($maxNetAdjusted['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
+            <article class="card"><h3>Minimo netto rettificato</h3><p class="big <?= (($minNetAdjusted['value'] ?? 0) < 0) ? 'neg' : '' ?>"><?= e($money($minNetAdjusted['value'] ?? null)) ?></p><p class="tiny-note"><?= $minNetAdjusted !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($minNetAdjusted['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
             <article class="card"><h3>Massimo saldo disponibile</h3><p class="big pos"><?= e($money($maxAvailable['value'] ?? null)) ?></p><p class="tiny-note"><?= $maxAvailable !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($maxAvailable['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
             <article class="card"><h3>Minimo saldo contabile</h3><p class="big <?= (($minAccounting['value'] ?? 0) < 0) ? 'neg' : '' ?>"><?= e($money($minAccounting['value'] ?? null)) ?></p><p class="tiny-note"><?= $minAccounting !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($minAccounting['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
         </div>
@@ -146,7 +160,7 @@ include __DIR__ . '/partials/header.php';
         <div class="split-chart-grid account-history-chart-grid">
             <?php if ($hasPatrimonyChart): ?>
             <article class="chart-card">
-                <h3>Patrimonio</h3>
+                <h3>Patrimonio e portafoglio</h3>
                 <div class="chart-wrap chart-wrap-compact"><canvas id="patrimonyChart"></canvas></div>
             </article>
             <?php endif; ?>
@@ -187,7 +201,7 @@ include __DIR__ . '/partials/header.php';
         </div>
         <div class="table-wrap account-history-table-wrap">
             <table class="account-history-table">
-                <thead><tr><th>Data</th><th>Patrimonio Fineco</th><th>Portafoglio consolidato</th><th>Liquidita propria</th><th>Ricostruito</th><th>Saldo contabile</th><th>Saldo disponibile</th><th>Fido utilizzato</th><th>Origine</th></tr></thead>
+                <thead><tr><th>Data</th><th>Patrimonio Fineco</th><th>Netto rettificato</th><th>Portafoglio Fineco</th><th>Liquidita Fineco</th><th>Liquidita propria</th><th>Ricostruito</th><th>Saldo contabile</th><th>Saldo disponibile</th><th>Fido disponibile</th><th>Fido utilizzato</th><th>Origine</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $row): ?>
                     <?php
@@ -201,11 +215,14 @@ include __DIR__ . '/partials/header.php';
                     <tr class="<?= e($rowClass) ?>">
                         <td><?= e((new DateTimeImmutable((string) $row['snapshot_date']))->format('d/m/Y')) ?></td>
                         <td><?= e($money($fineco)) ?><?php if ($isMaxFineco): ?><span class="snapshot-extreme-badge snapshot-extreme-max">Massimo</span><?php elseif ($isMinFineco): ?><span class="snapshot-extreme-badge snapshot-extreme-min">Minimo</span><?php endif; ?></td>
+                        <td><?= e($money($row['net_adjusted_num'])) ?></td>
                         <td><?= e($money($row['portfolio_market_value_num'])) ?></td>
                         <td><?= e($money($row['liquidity_total'] !== null ? (float) $row['liquidity_total'] : null)) ?></td>
+                        <td><?= e($money($row['own_liquidity_adjusted_num'])) ?></td>
                         <td><?= e($money($row['reconstructed_gross_num'])) ?></td>
                         <td class="<?= $accounting !== null && $accounting < 0 ? 'neg' : '' ?>"><?= e($money($accounting)) ?><?php if ($sameExtreme($accounting, $minAccounting)): ?><span class="snapshot-extreme-badge snapshot-extreme-min">Minimo</span><?php endif; ?></td>
                         <td><?= e($money($available)) ?><?php if ($sameExtreme($available, $maxAvailable)): ?><span class="snapshot-extreme-badge snapshot-extreme-max">Massimo</span><?php endif; ?></td>
+                        <td><?= e($money($row['credit_available_amount'] !== null ? (float) $row['credit_available_amount'] : null)) ?></td>
                         <td><?= e($money($row['credit_used_amount'] !== null ? (float) $row['credit_used_amount'] : null)) ?></td>
                         <td><?= e($originLabel((string) ($row['data_origin'] ?? ''))) ?></td>
                     </tr>
@@ -245,13 +262,15 @@ include __DIR__ . '/partials/header.php';
         };
         makeChart('patrimonyChart', [
             {label: 'Patrimonio Fineco', data: <?= json_encode($chartFineco) ?>, borderColor: '#129e96', backgroundColor: 'rgba(18, 158, 150, .12)', tension: .22, spanGaps: true},
+            {label: 'Patrimonio netto rettificato', data: <?= json_encode($chartNetAdjusted) ?>, borderColor: '#168349', backgroundColor: 'rgba(22, 131, 73, .10)', tension: .22, spanGaps: true},
             {label: 'Portafoglio consolidato', data: <?= json_encode($chartPortfolio) ?>, borderColor: '#2f64c8', backgroundColor: 'rgba(47, 100, 200, .10)', tension: .22, spanGaps: true},
             {label: 'Patrimonio ricostruito', data: <?= json_encode($chartReconstructed) ?>, borderColor: '#65748b', backgroundColor: 'rgba(101, 116, 139, .1)', borderDash: [6, 4], tension: .22, spanGaps: true}
         ]);
         makeChart('balancesChart', [
             {label: 'Saldo contabile', data: <?= json_encode($chartAccounting) ?>, borderColor: '#cb3650', backgroundColor: 'rgba(203, 54, 80, .1)', tension: .22, spanGaps: true},
             {label: 'Saldo disponibile', data: <?= json_encode($chartAvailable) ?>, borderColor: '#3373cc', backgroundColor: 'rgba(51, 115, 204, .1)', tension: .22, spanGaps: true},
-            {label: 'Liquidita propria', data: <?= json_encode($chartLiquidity) ?>, borderColor: '#168349', backgroundColor: 'rgba(22, 131, 73, .1)', tension: .22, spanGaps: true}
+            {label: 'Liquidita Fineco', data: <?= json_encode($chartLiquidity) ?>, borderColor: '#65748b', backgroundColor: 'rgba(101, 116, 139, .1)', tension: .22, spanGaps: true},
+            {label: 'Liquidita propria rettificata', data: <?= json_encode($chartOwnLiquidity) ?>, borderColor: '#168349', backgroundColor: 'rgba(22, 131, 73, .1)', tension: .22, spanGaps: true}
         ]);
     })();
     </script>

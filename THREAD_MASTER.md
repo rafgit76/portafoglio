@@ -5,7 +5,7 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `2.3.1`
+- `2.4.0`
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto
@@ -188,6 +188,14 @@ Il parser Patrimonio si basa sulle etichette reali dell'export Fineco: Patrimoni
 - dall'archivio AI ogni singolo report puo essere eliminato dopo una conferma esplicita protetta da CSRF; snapshot e dati conto non vengono coinvolti.
 - i delta usati nei report sono calcolati sulle stesse cifre arrotondate mostrate al lettore, cosi ogni sottrazione coincide con la tabella.
 - prompt e validatori impediscono nessi causali e descrizioni temporali non supportate da due soli snapshot.
+
+## Semantica Credit Lombard 2.4.0
+
+- Il file Patrimonio Fineco del 21/08/2026 conferma che Fineco include il credito disponibile sia in Totale liquidita sia in Patrimonio totale.
+- Il dato riportato da Fineco resta conservato come `Patrimonio Fineco`; la metrica primaria di ricchezza propria e `Patrimonio netto rettificato = Patrimonio Fineco - fido disponibile` quando entrambi i dati esistono.
+- La liquidita viene esposta sia come valore Fineco sia come `Liquidita propria rettificata = Totale liquidita Fineco - fido disponibile`.
+- Portafoglio totale Fineco, liquidita prenotata e fidi vengono memorizzati separatamente; i dossier, incluso quello a pegno, restano componenti del portafoglio e non credito.
+- Migrazione richiesta: dopo un export completo del DB, importare una sola volta `sql/migration_2_4_0_credit_lombard_semantics.sql`. Nessuno snapshot storico viene aggiornato automaticamente.
 
 ## Regola operativa ufficiale snapshot
 

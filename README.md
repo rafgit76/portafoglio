@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.3.1`
+Versione corrente: `2.4.0`
 
 ## Deploy (FTP)
 
@@ -81,14 +81,14 @@ Lo sblocco scade dopo 30 minuti di inattivita. Dopo 10 tentativi errati dallo st
 
 Il portafoglio resta la base obbligatoria dell'app. Tutte le altre funzioni sono opzionali: se carichi soltanto l'export Portfolio Fineco l'app continua a funzionare come prima.
 
-Per attivare il modulo Conto su un database esistente, prima esporta il database completo da phpMyAdmin, poi importa **una sola volta** `sql/migration_2_2_0_account_tracker.sql`. Aruba non offre un backup automatico affidabile da PHP senza shell: l'export phpMyAdmin e il backup completo da conservare prima della migrazione. Ogni modifica manuale a uno snapshot gia esistente crea inoltre un backup logico recuperabile in `pf_snapshot_revisions`.
+Per una prima installazione del modulo Conto importa prima `sql/migration_2_2_0_account_tracker.sql`. Per aggiornare un modulo Conto gia presente, prima esporta il database completo da phpMyAdmin, poi importa **una sola volta** `sql/migration_2_4_0_credit_lombard_semantics.sql`. Aruba non offre un backup automatico affidabile da PHP senza shell: l'export phpMyAdmin e il backup completo da conservare prima della migrazione. La migrazione aggiunge soltanto colonne nullable e non modifica gli snapshot esistenti. Ogni modifica manuale a uno snapshot gia esistente crea inoltre un backup logico recuperabile in `pf_snapshot_revisions`.
 
 In `Upload` sono disponibili due flussi distinti:
 
 1. **Import portafoglio Fineco**: obbligatorio, con scelta del dossier di provenienza. Gli snapshot storici precedenti alla migrazione sono trattati automaticamente come dossier ordinario.
-2. **Import patrimonio Fineco**: facoltativo. Il parser riconosce le etichette Fineco, non righe fisse, e importa solo voci presenti: patrimonio totale, saldo contabile, saldo disponibile, totale liquidita, multicurrency, fido e valori dossier. Nel file campione Fineco il dossier a pegno viene associato al dossier Credit Lombard; i suoi valori servono alla riconciliazione e non vengono sommati una seconda volta al patrimonio totale.
+2. **Import patrimonio Fineco**: facoltativo. Il parser riconosce le etichette Fineco, non righe fisse, e importa solo voci presenti: patrimonio totale, portafoglio totale, saldo contabile, saldo disponibile, totale liquidita, liquidita prenotata, multicurrency, fido e valori dossier. Nel file campione Fineco il dossier a pegno viene associato al dossier Credit Lombard; i suoi valori servono alla riconciliazione e non vengono sommati una seconda volta al patrimonio totale.
 
-Le priorita sono: import Patrimonio Fineco, override manuale per la stessa data, valore calcolato se applicabile. Il payload importato e conservato insieme agli override manuali. Il credito disponibile non e mai patrimonio; il patrimonio ricostruito e disponibile solo quando esistono per la stessa data valore del portafoglio e liquidita propria. Il patrimonio netto rettificato sottrae soltanto il debito/fido effettivamente utilizzato.
+Le priorita sono: import Patrimonio Fineco, override manuale per la stessa data, valore calcolato se applicabile. Il payload importato e conservato insieme agli override manuali. Il credito disponibile non e mai patrimonio. Quando Fineco lo include in liquidita e patrimonio totale, l'app mostra separatamente Patrimonio Fineco e Patrimonio netto rettificato (`Patrimonio Fineco - fido disponibile`), oltre a Liquidita Fineco e Liquidita propria rettificata (`Liquidita Fineco - fido disponibile`). Il fido utilizzato usa il campo Fineco diretto quando presente, altrimenti solo il controllo `accordato - disponibile`.
 
 La pagina `Conto -> Andamento patrimonio` conserva gli snapshot patrimoniali giornalieri in un archivio separato da quello del portafoglio. Mostra gli estremi sull'intera cronologia e grafici distinti per patrimonio e saldi; valori assenti restano semplicemente non disponibili e non generano grafici vuoti.
 
