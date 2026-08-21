@@ -2980,6 +2980,102 @@ tbody tr.snapshot-row-min:hover {
     margin-top: 0.4rem;
 }
 
+.upload-confirmation {
+    border-color: #91d5cf;
+}
+
+.compact-stats {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    overflow: hidden;
+    margin: 18px 0 12px;
+}
+
+.compact-stats .stat-card {
+    min-width: 0;
+    padding: 13px 14px;
+    border-right: 1px solid var(--border);
+    background: #f8fbfc;
+}
+
+.compact-stats .stat-card:last-child {
+    border-right: 0;
+}
+
+.compact-stats .stat-card span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.compact-stats .stat-card strong {
+    display: block;
+    margin-top: 5px;
+    font-size: 1rem;
+    overflow-wrap: anywhere;
+}
+
+.warning-note {
+    margin: 12px 0;
+    padding: 11px 13px;
+    border: 1px solid #e8bf68;
+    border-radius: 6px;
+    background: #fff8e8;
+    color: #765116;
+}
+
+.inline-confirm-form {
+    display: grid;
+    gap: 12px;
+}
+
+.confirm-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-weight: 600;
+}
+
+@media (max-width: 900px) {
+    .compact-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .compact-stats .stat-card:nth-child(2n) {
+        border-right: 0;
+    }
+
+    .compact-stats .stat-card:last-child {
+        grid-column: span 2;
+    }
+}
+
+.transfer-preview {
+    margin-top: 1rem;
+    padding: 0.9rem;
+    border: 1px solid #98d8cf;
+    border-radius: 8px;
+    background: #f1fbf8;
+}
+
+.transfer-preview-error {
+    border-color: #efabb5;
+    background: #fff4f5;
+    display: grid;
+    gap: 0.3rem;
+}
+
+.transfer-confirm-form {
+    display: grid;
+    gap: 0.8rem;
+    margin-top: 0.9rem;
+    max-width: 780px;
+}
+
 .account-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }

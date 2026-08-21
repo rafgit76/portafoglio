@@ -6,6 +6,28 @@ require_once __DIR__ . '/account_tracker.php';
 require_once __DIR__ . '/xlsx_reader.php';
 require_once __DIR__ . '/fineco_xlsx_parser.php';
 
+function fineco_portfolio_import_slot(string $slot): array
+{
+    $slots = [
+        'main' => [
+            'dossier_code' => 'ordinario',
+            'label' => 'Portafoglio principale',
+            'file_prefix' => 'portafoglio-principale_',
+        ],
+        'credit_lombard' => [
+            'dossier_code' => 'credit_lombard',
+            'label' => 'Dossier Credit Lombard',
+            'file_prefix' => 'dossier-credit-lombard_',
+        ],
+    ];
+
+    if (!isset($slots[$slot])) {
+        throw new RuntimeException('Slot di import portafoglio non valido.');
+    }
+
+    return $slots[$slot];
+}
+
 function import_fineco_spreadsheet(string $uploadedPath, string $originalFileName, string $snapshotDate, string $dossierCode = 'ordinario'): array
 {
     $parser = new FinecoXlsxParser();
@@ -79,7 +101,7 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
              VALUES (:snapshot_date, :source_file_name, :notes, 0, 0, 0)
              ON DUPLICATE KEY UPDATE
                id = LAST_INSERT_ID(id),
-               source_file_name = VALUES(source_file_name),
+               source_file_name = IF(source_file_name IS NULL OR source_file_name = "", VALUES(source_file_name), source_file_name),
                notes = VALUES(notes),
                created_at = CURRENT_TIMESTAMP'
         );
@@ -147,6 +169,15 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
             'SELECT id FROM pf_snapshot_positions
              WHERE snapshot_id = :snapshot_id AND dossier_id = :dossier_id AND asset_id = :asset_id AND data_origin <> "IMPORT_FINECO" LIMIT 1'
         ) : null;
+        $stmtConfirmedDocumentedTransfer = $accountTrackerEnabled ? $pdo->prepare(
+            'SELECT id FROM pf_internal_transfers
+             WHERE asset_id = :asset_id AND target_dossier_id = :dossier_id AND status = "CONFIRMED" AND source_type = "FINECO_ACCOUNTING_PDF"
+             LIMIT 1'
+        ) : null;
+        $stmtReplaceManualPosition = $accountTrackerEnabled ? $pdo->prepare(
+            'DELETE FROM pf_snapshot_positions
+             WHERE snapshot_id = :snapshot_id AND dossier_id = :dossier_id AND asset_id = :asset_id AND data_origin <> "IMPORT_FINECO"'
+        ) : null;
 
         foreach ($positionsRaw as $p) {
             $assetId = null;
@@ -203,7 +234,19 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
                     ':asset_id' => (int) $assetId,
                 ]);
                 if ($stmtManualPosition->fetchColumn()) {
-                    throw new RuntimeException('Esiste una posizione manuale nello stesso dossier e data. Rimuovila o conferma prima la relativa correzione.');
+                    $canReplaceDocumentedTransfer = false;
+                    if ((string) $dossier['code'] === 'credit_lombard' && $stmtConfirmedDocumentedTransfer instanceof PDOStatement) {
+                        $stmtConfirmedDocumentedTransfer->execute([':asset_id' => (int) $assetId, ':dossier_id' => (int) $dossier['id']]);
+                        $canReplaceDocumentedTransfer = (bool) $stmtConfirmedDocumentedTransfer->fetchColumn();
+                    }
+                    if (!$canReplaceDocumentedTransfer) {
+                        throw new RuntimeException('Esiste una posizione manuale nello stesso dossier e data. Rimuovila o conferma prima la relativa correzione.');
+                    }
+                    $stmtReplaceManualPosition?->execute([
+                        ':snapshot_id' => $snapshotId,
+                        ':dossier_id' => (int) $dossier['id'],
+                        ':asset_id' => (int) $assetId,
+                    ]);
                 }
             }
 
@@ -296,6 +339,9 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
             'snapshot_id' => $snapshotId,
             'positions' => count($positionsRaw),
             'total_market_value' => (float) $snapshotTotals['total_market_value'],
+            'total_cost_basis' => (float) $snapshotTotals['total_cost_basis'],
+            'total_unrealized_pnl' => (float) $snapshotTotals['total_unrealized_pnl'],
+            'dossier_code' => $accountTrackerEnabled ? (string) $dossier['code'] : 'ordinario',
             'transfer_candidates' => $transferCandidates,
         ];
     } catch (Throwable $e) {

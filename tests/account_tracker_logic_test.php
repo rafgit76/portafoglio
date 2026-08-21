@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../lib/account_tracker.php';
 require_once __DIR__ . '/../lib/fineco_patrimony_importer.php';
+require_once __DIR__ . '/../lib/fineco_importer.php';
 require_once __DIR__ . '/../lib/ai_report.php';
 
 $checks = 0;
@@ -43,6 +44,41 @@ $assert(account_tracker_optional_decimal('', 'campo') === null, 'campo patrimoni
 $assert(account_tracker_transfer_quantities_match(20000.0, 20000.0), 'trasferimento stessa quantita');
 $assert(account_tracker_transfer_quantities_match(20000.0, 20019.0), 'trasferimento entro tolleranza');
 $assert(!account_tracker_transfer_quantities_match(20000.0, 19900.0), 'trasferimento ambiguo rifiutato');
+$assert(account_tracker_is_documented_internal_transfer_operation('GIRO INT PAR INT'), 'codice giro interno documentato');
+$assert(!account_tracker_is_documented_internal_transfer_operation('VENDITA'), 'vendita non classificata come giro interno');
+$documentedPosition = account_tracker_documented_transfer_position(20000.0, 20000.0, 19745.97, 100.0);
+$assert(abs((float) $documentedPosition['avg_load_price'] - 100.0) < 0.00001, 'prezzo medio del giro interno conservato');
+$assert(abs((float) $documentedPosition['current_price'] - 98.72985) < 0.00001, 'prezzo corrente BTP coerente con quotazione cento');
+$assert(abs((float) $documentedPosition['unrealized_pnl'] + 254.03) < 0.01, 'giro interno mantiene P L non realizzato');
+$assert((float) $documentedPosition['cost_basis'] === 20000.0, 'carico storico trasferito invariato');
+
+// Gli slot sono l'origine affidabile del dossier: Fineco puo assegnare lo stesso filename ai due export.
+$mainSlot = fineco_portfolio_import_slot('main');
+$lombardSlot = fineco_portfolio_import_slot('credit_lombard');
+$assert($mainSlot['dossier_code'] === 'ordinario', 'slot principale assegnato al dossier ordinario');
+$assert($lombardSlot['dossier_code'] === 'credit_lombard', 'slot Lombard assegnato al dossier Credit Lombard');
+$assert($mainSlot['dossier_code'] !== $lombardSlot['dossier_code'], 'due file con lo stesso nome restano distinti dagli slot');
+$assert($mainSlot['file_prefix'] !== $lombardSlot['file_prefix'], 'nomi generati distinguono l origine senza leggere il filename Fineco');
+
+// Caso reale: il BTP trasferito viene aggregato al dossier ordinario senza realizzare P/L.
+$mainAfterTransfer = ['cost_basis' => 118291.56, 'market_value' => 167308.91, 'unrealized_pnl' => 48230.50];
+$lombardExport = ['quantity' => 20000.0, 'cost_basis' => 20000.0, 'market_value' => 19652.00, 'unrealized_pnl' => -348.00];
+$assert(abs(($mainAfterTransfer['cost_basis'] + $lombardExport['cost_basis']) - 138291.56) < 0.01, 'carico consolidato 11829156 piu 20000');
+$assert(abs(($mainAfterTransfer['market_value'] + $lombardExport['market_value']) - 186960.91) < 0.01, 'valore di mercato consolidato multi dossier');
+$assert(abs(($mainAfterTransfer['unrealized_pnl'] + $lombardExport['unrealized_pnl']) - 47882.50) < 0.01, 'P L consolidato non realizzato');
+$assert($lombardExport['quantity'] === 20000.0 && $documentedPosition['quantity'] === 20000.0, 'quantita BTP continua tra giro interno ed export Lombard');
+$assert(!account_tracker_is_documented_internal_transfer_operation('VENDITA'), 'giro interno non produce vendita realizzata');
+
+// Export Fineco dopo l'attivazione definitiva: un solo fido Lombard da 12.000 EUR.
+$lombardCurrent = account_tracker_patrimonial_adjustments([
+    'fineco_total_assets' => 200233.09974204,
+    'liquidity_total' => 12760.76,
+    'credit_available_amount' => 12000.0,
+]);
+$assert(abs((float) $lombardCurrent['net_assets_adjusted'] - 188233.09974204) < 0.01, 'netto rettificato con fido Fineco 12000');
+$assert(abs((float) $lombardCurrent['own_liquidity_adjusted'] - 760.76) < 0.01, 'liquidita propria con fido Fineco 12000');
+$assert(account_tracker_effective_credit_used(12000.0, 0.0, 12000.0) === 0.0, 'fido Lombard 12000 non utilizzato');
+$assert(abs((726.44 - 31.67 + 12000.0) - 12694.77) < 0.01, 'controllo saldo disponibile con fido 12000');
 
 // Priorita: il manuale puo fare override senza distruggere il payload Fineco originario.
 $effective = fineco_patrimony_effective_values(
@@ -95,6 +131,15 @@ foreach ($matches[1] as $placeholder) {
     $placeholders[$placeholder] = ($placeholders[$placeholder] ?? 0) + 1;
 }
 $assert(max($placeholders) === 1, 'placeholder ricalcolo pesi non duplicati');
+
+// La conferma dei trasferimenti deve essere compatibile con i prepare nativi di Aruba.
+$transferStatusSql = account_tracker_transfer_status_update_sql();
+$transferPlaceholders = [];
+preg_match_all('/:([a-z_]+)/', $transferStatusSql, $transferMatches);
+foreach ($transferMatches[1] as $placeholder) {
+    $transferPlaceholders[$placeholder] = ($transferPlaceholders[$placeholder] ?? 0) + 1;
+}
+$assert(max($transferPlaceholders) === 1, 'placeholder conferma trasferimento non duplicati');
 
 // Archivio: la tabella parte dal dato piu recente, i grafici possono usare la serie originale crescente.
 $historyDates = [

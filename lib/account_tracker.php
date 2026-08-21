@@ -33,6 +33,23 @@ function account_tracker_schema_ready(?PDO $pdo = null): bool
                 return $ready = false;
             }
         }
+        $requiredTransferColumns = [
+            'execution_date',
+            'settlement_date',
+            'effective_snapshot_date',
+            'operation_code',
+            'source_type',
+            'source_document_name',
+            'gross_accrual',
+            'withholding_tax',
+            'total_amount',
+        ];
+        $transferColumns = $pdo->query('SHOW COLUMNS FROM `pf_internal_transfers`')->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($requiredTransferColumns as $column) {
+            if (!in_array($column, $transferColumns, true)) {
+                return $ready = false;
+            }
+        }
     } catch (Throwable) {
         return $ready = false;
     }
@@ -457,6 +474,291 @@ function account_tracker_transfer_quantities_match(float $sourceQuantity, float 
     return abs($targetQuantity - $sourceQuantity) <= $quantityTolerance;
 }
 
+function account_tracker_documented_transfer_position(float $quantity, float $costBasis, float $marketValue, ?float $historicalAvgLoadPrice = null): array
+{
+    if ($quantity <= 0 || $costBasis < 0 || $marketValue < 0) {
+        throw new RuntimeException('Quantita e valori del trasferimento non validi.');
+    }
+
+    $avgLoadPrice = $historicalAvgLoadPrice !== null && $historicalAvgLoadPrice > 0
+        ? $historicalAvgLoadPrice
+        : $costBasis / $quantity;
+    $currentPrice = $costBasis > 0
+        ? $avgLoadPrice * ($marketValue / $costBasis)
+        : $marketValue / $quantity;
+
+    return [
+        'quantity' => $quantity,
+        'avg_load_price' => $avgLoadPrice,
+        'current_price' => $currentPrice,
+        'cost_basis' => $costBasis,
+        'market_value' => $marketValue,
+        'unrealized_pnl' => $marketValue - $costBasis,
+    ];
+}
+
+function account_tracker_is_documented_internal_transfer_operation(string $operationCode): bool
+{
+    return strtoupper(trim($operationCode)) === 'GIRO INT PAR INT';
+}
+
+function account_tracker_documented_transfer_preview(PDO $pdo, array $input): array
+{
+    if (!account_tracker_schema_ready($pdo)) {
+        throw new RuntimeException('Il modulo Conto non e inizializzato.');
+    }
+
+    $assetId = (int) ($input['asset_id'] ?? 0);
+    $sourceDossierId = (int) ($input['source_dossier_id'] ?? 0);
+    $targetDossierId = (int) ($input['target_dossier_id'] ?? 0);
+    $effectiveDate = (string) ($input['effective_snapshot_date'] ?? '');
+    $quantity = (float) ($input['quantity'] ?? 0);
+    if ($assetId <= 0 || $sourceDossierId <= 0 || $targetDossierId <= 0 || $sourceDossierId === $targetDossierId || $quantity <= 0) {
+        throw new RuntimeException('Dati del trasferimento incompleti o non validi.');
+    }
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $effectiveDate);
+    if (!$date || $date->format('Y-m-d') !== $effectiveDate) {
+        throw new RuntimeException('Data del primo snapshot da correggere non valida.');
+    }
+
+    $assetStatement = $pdo->prepare('SELECT id, name, isin, asset_type, currency FROM pf_assets WHERE id = :id LIMIT 1');
+    $assetStatement->execute([':id' => $assetId]);
+    $asset = $assetStatement->fetch();
+    if (!is_array($asset)) {
+        throw new RuntimeException('Titolo non trovato.');
+    }
+
+    $dossierStatement = $pdo->prepare('SELECT id, code, name FROM pf_dossiers WHERE id IN (:source_id, :target_id)');
+    $dossierStatement->execute([':source_id' => $sourceDossierId, ':target_id' => $targetDossierId]);
+    $dossierRows = $dossierStatement->fetchAll();
+    $dossiers = [];
+    foreach ($dossierRows as $dossier) {
+        $dossiers[(int) $dossier['id']] = $dossier;
+    }
+    if (!isset($dossiers[$sourceDossierId], $dossiers[$targetDossierId])) {
+        throw new RuntimeException('Dossier del trasferimento non trovato.');
+    }
+
+    $sourceStatement = $pdo->prepare(
+        'SELECT p.*, s.snapshot_date
+         FROM pf_snapshot_positions p
+         JOIN pf_snapshots s ON s.id = p.snapshot_id
+         WHERE p.asset_id = :asset_id
+           AND p.dossier_id = :dossier_id
+           AND s.snapshot_date < :effective_date
+         ORDER BY s.snapshot_date DESC, s.id DESC
+         LIMIT 1'
+    );
+    $sourceStatement->execute([
+        ':asset_id' => $assetId,
+        ':dossier_id' => $sourceDossierId,
+        ':effective_date' => $effectiveDate,
+    ]);
+    $sourcePosition = $sourceStatement->fetch();
+    if (!is_array($sourcePosition)) {
+        throw new RuntimeException('Non trovo una posizione precedente nel dossier di origine per conservare il costo storico.');
+    }
+    if (!account_tracker_transfer_quantities_match((float) $sourcePosition['quantity'], $quantity)) {
+        throw new RuntimeException('La quantita indicata non coincide con l\'ultima posizione nota nel dossier di origine.');
+    }
+
+    $snapshotStatement = $pdo->prepare(
+        'SELECT id, snapshot_date
+         FROM pf_snapshots
+         WHERE snapshot_date >= :effective_date
+         ORDER BY snapshot_date ASC, id ASC'
+    );
+    $snapshotStatement->execute([':effective_date' => $effectiveDate]);
+
+    $positionStatement = $pdo->prepare(
+        'SELECT dossier_id, data_origin
+         FROM pf_snapshot_positions
+         WHERE snapshot_id = :snapshot_id AND asset_id = :asset_id'
+    );
+    $valueStatement = $pdo->prepare(
+        'SELECT v.amount, v.source_label
+         FROM pf_patrimonial_snapshots p
+         JOIN pf_patrimonial_dossier_values v ON v.patrimonial_snapshot_id = p.id
+         WHERE p.snapshot_date = :snapshot_date AND v.dossier_id = :dossier_id
+         ORDER BY v.id ASC'
+    );
+
+    $ready = [];
+    $skipped = [];
+    foreach ($snapshotStatement->fetchAll() as $snapshot) {
+        $snapshotId = (int) $snapshot['id'];
+        $positionStatement->execute([':snapshot_id' => $snapshotId, ':asset_id' => $assetId]);
+        $positions = $positionStatement->fetchAll();
+        $hasSource = false;
+        $hasTarget = false;
+        foreach ($positions as $position) {
+            $hasSource = $hasSource || (int) $position['dossier_id'] === $sourceDossierId;
+            $hasTarget = $hasTarget || (int) $position['dossier_id'] === $targetDossierId;
+        }
+        if ($hasTarget) {
+            $skipped[] = ['snapshot_date' => (string) $snapshot['snapshot_date'], 'reason' => 'Gia presente nel dossier di garanzia.'];
+            continue;
+        }
+        if ($hasSource) {
+            $skipped[] = ['snapshot_date' => (string) $snapshot['snapshot_date'], 'reason' => 'Ancora presente nel dossier di origine.'];
+            continue;
+        }
+
+        $valueStatement->execute([':snapshot_date' => $snapshot['snapshot_date'], ':dossier_id' => $targetDossierId]);
+        $dossierValue = $valueStatement->fetch();
+        if (!is_array($dossierValue) || $dossierValue['amount'] === null) {
+            $skipped[] = ['snapshot_date' => (string) $snapshot['snapshot_date'], 'reason' => 'Manca il controvalore Fineco del dossier a garanzia.'];
+            continue;
+        }
+
+        $ready[] = [
+            'snapshot_id' => $snapshotId,
+            'snapshot_date' => (string) $snapshot['snapshot_date'],
+            'market_value' => (float) $dossierValue['amount'],
+            'source_label' => (string) $dossierValue['source_label'],
+        ];
+    }
+
+    return [
+        'asset' => $asset,
+        'source_dossier' => $dossiers[$sourceDossierId],
+        'target_dossier' => $dossiers[$targetDossierId],
+        'source_position' => $sourcePosition,
+        'cost_basis' => (float) $sourcePosition['cost_basis'],
+        'quantity' => $quantity,
+        'ready' => $ready,
+        'skipped' => $skipped,
+    ];
+}
+
+function account_tracker_apply_documented_transfer(PDO $pdo, array $input): array
+{
+    $preview = account_tracker_documented_transfer_preview($pdo, $input);
+    if ($preview['ready'] === []) {
+        throw new RuntimeException('Non ci sono snapshot correggibili: serve almeno un controvalore Fineco del dossier a garanzia.');
+    }
+    if (($input['confirm_sole_target_position'] ?? false) !== true) {
+        throw new RuntimeException('Conferma che il controvalore del dossier a garanzia si riferisce a questo solo titolo per gli snapshot proposti.');
+    }
+
+    $executionDate = $input['execution_date'] ?? null;
+    $settlementDate = $input['settlement_date'] ?? null;
+    foreach (['execution_date' => $executionDate, 'settlement_date' => $settlementDate] as $label => $value) {
+        if ($value !== null && $value !== '') {
+            $date = DateTimeImmutable::createFromFormat('!Y-m-d', (string) $value);
+            if (!$date || $date->format('Y-m-d') !== $value) {
+                throw new RuntimeException('Data non valida: ' . $label . '.');
+            }
+        }
+    }
+
+    $grossAccrual = $input['gross_accrual'] ?? null;
+    $withholdingTax = $input['withholding_tax'] ?? null;
+    $totalAmount = $input['total_amount'] ?? null;
+    $documentName = trim((string) ($input['source_document_name'] ?? ''));
+    $operationCode = trim((string) ($input['operation_code'] ?? 'GIRO INT PAR INT'));
+    if (!account_tracker_is_documented_internal_transfer_operation($operationCode)) {
+        throw new RuntimeException('La procedura documentata supporta solo il codice operazione GIRO INT PAR INT.');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $insertPosition = $pdo->prepare(
+            'INSERT INTO pf_snapshot_positions
+                (snapshot_id, dossier_id, asset_id, quantity, avg_load_price, current_price, cost_basis, market_value, unrealized_pnl, weight_pct, imported_weight_pct, currency, data_origin)
+             VALUES
+                (:snapshot_id, :dossier_id, :asset_id, :quantity, :avg_load_price, :current_price, :cost_basis, :market_value, :unrealized_pnl, 0, 0, :currency, "MANUALE")'
+        );
+        $revisionIds = [];
+        foreach ($preview['ready'] as $candidate) {
+            $position = account_tracker_documented_transfer_position(
+                (float) $preview['quantity'],
+                (float) $preview['cost_basis'],
+                (float) $candidate['market_value'],
+                (float) $preview['source_position']['avg_load_price']
+            );
+            $revisionId = account_tracker_backup_snapshot($pdo, (int) $candidate['snapshot_id'], 'DOCUMENTED_INTERNAL_TRANSFER', [
+                'asset_id' => (int) $preview['asset']['id'],
+                'operation_code' => $operationCode,
+                'source_document_name' => $documentName !== '' ? $documentName : null,
+                'market_value_source' => $candidate['source_label'],
+            ]);
+            $revisionIds[(int) $candidate['snapshot_id']] = $revisionId;
+            $insertPosition->execute([
+                ':snapshot_id' => (int) $candidate['snapshot_id'],
+                ':dossier_id' => (int) $preview['target_dossier']['id'],
+                ':asset_id' => (int) $preview['asset']['id'],
+                ':quantity' => $position['quantity'],
+                ':avg_load_price' => $position['avg_load_price'],
+                ':current_price' => $position['current_price'],
+                ':cost_basis' => $position['cost_basis'],
+                ':market_value' => $position['market_value'],
+                ':unrealized_pnl' => $position['unrealized_pnl'],
+                ':currency' => (string) $preview['asset']['currency'],
+            ]);
+            account_tracker_recalculate_snapshot($pdo, (int) $candidate['snapshot_id']);
+            account_tracker_finalize_snapshot_backup($pdo, $revisionId, (int) $candidate['snapshot_id']);
+        }
+
+        $firstTarget = $preview['ready'][0];
+        $transfer = $pdo->prepare(
+            'INSERT INTO pf_internal_transfers
+                (asset_id, source_snapshot_id, target_snapshot_id, source_dossier_id, target_dossier_id, quantity, source_cost_basis, target_cost_basis, confidence, status, detected_reason, notes, execution_date, settlement_date, effective_snapshot_date, operation_code, source_type, source_document_name, gross_accrual, withholding_tax, total_amount, confirmed_at)
+             VALUES
+                (:asset_id, :source_snapshot_id, :target_snapshot_id, :source_dossier_id, :target_dossier_id, :quantity, :source_cost_basis, :target_cost_basis, "HIGH", "CONFIRMED", :detected_reason, :notes, :execution_date, :settlement_date, :effective_snapshot_date, :operation_code, "FINECO_ACCOUNTING_PDF", :source_document_name, :gross_accrual, :withholding_tax, :total_amount, NOW())
+             ON DUPLICATE KEY UPDATE
+                source_cost_basis = VALUES(source_cost_basis),
+                target_cost_basis = VALUES(target_cost_basis),
+                confidence = "HIGH",
+                status = "CONFIRMED",
+                detected_reason = VALUES(detected_reason),
+                notes = VALUES(notes),
+                execution_date = VALUES(execution_date),
+                settlement_date = VALUES(settlement_date),
+                effective_snapshot_date = VALUES(effective_snapshot_date),
+                operation_code = VALUES(operation_code),
+                source_type = "FINECO_ACCOUNTING_PDF",
+                source_document_name = VALUES(source_document_name),
+                gross_accrual = VALUES(gross_accrual),
+                withholding_tax = VALUES(withholding_tax),
+                total_amount = VALUES(total_amount),
+                confirmed_at = NOW()'
+        );
+        $transfer->execute([
+            ':asset_id' => (int) $preview['asset']['id'],
+            ':source_snapshot_id' => (int) $preview['source_position']['snapshot_id'],
+            ':target_snapshot_id' => (int) $firstTarget['snapshot_id'],
+            ':source_dossier_id' => (int) $preview['source_dossier']['id'],
+            ':target_dossier_id' => (int) $preview['target_dossier']['id'],
+            ':quantity' => (float) $preview['quantity'],
+            ':source_cost_basis' => (float) $preview['cost_basis'],
+            ':target_cost_basis' => (float) $preview['cost_basis'],
+            ':detected_reason' => 'Contabile Fineco GIRO INT PAR INT: trasferimento interno, nessuna vendita o realizzo.',
+            ':notes' => 'Posizione manuale di consolidamento aggiunta solo dove il dossier a pegno Fineco fornisce il controvalore.',
+            ':execution_date' => $executionDate !== '' ? $executionDate : null,
+            ':settlement_date' => $settlementDate !== '' ? $settlementDate : null,
+            ':effective_snapshot_date' => (string) $input['effective_snapshot_date'],
+            ':operation_code' => $operationCode,
+            ':source_document_name' => $documentName !== '' ? $documentName : null,
+            ':gross_accrual' => $grossAccrual,
+            ':withholding_tax' => $withholdingTax,
+            ':total_amount' => $totalAmount,
+        ]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    return [
+        'corrected_snapshots' => count($preview['ready']),
+        'skipped_snapshots' => count($preview['skipped']),
+        'preview' => $preview,
+    ];
+}
+
 function account_tracker_patrimonial_metrics(PDO $pdo): array
 {
     $patrimonial = account_tracker_latest_patrimonial_snapshot($pdo);
@@ -626,18 +928,47 @@ function account_tracker_pending_transfers(PDO $pdo): array
     )->fetchAll();
 }
 
+function account_tracker_confirmed_transfers(PDO $pdo, int $limit = 12): array
+{
+    if (!account_tracker_schema_ready($pdo)) {
+        return [];
+    }
+
+    $limit = max(1, min(100, $limit));
+    return $pdo->query(
+        'SELECT t.*, a.name AS asset_name, a.isin, from_d.name AS source_dossier_name, to_d.name AS target_dossier_name,
+                source_s.snapshot_date AS source_snapshot_date, target_s.snapshot_date AS target_snapshot_date
+         FROM pf_internal_transfers t
+         JOIN pf_assets a ON a.id = t.asset_id
+         JOIN pf_dossiers from_d ON from_d.id = t.source_dossier_id
+         JOIN pf_dossiers to_d ON to_d.id = t.target_dossier_id
+         JOIN pf_snapshots source_s ON source_s.id = t.source_snapshot_id
+         JOIN pf_snapshots target_s ON target_s.id = t.target_snapshot_id
+         WHERE t.status = "CONFIRMED"
+         ORDER BY COALESCE(t.effective_snapshot_date, target_s.snapshot_date) DESC, t.id DESC
+         LIMIT ' . $limit
+    )->fetchAll();
+}
+
+function account_tracker_transfer_status_update_sql(): string
+{
+    return 'UPDATE pf_internal_transfers
+            SET status = :status, confirmed_at = CASE WHEN :is_confirmed = 1 THEN NOW() ELSE NULL END
+            WHERE id = :id AND status = "PENDING"';
+}
+
 function account_tracker_set_transfer_status(PDO $pdo, int $transferId, string $status): void
 {
     if (!in_array($status, ['CONFIRMED', 'REJECTED'], true)) {
         throw new RuntimeException('Stato trasferimento non valido.');
     }
 
-    $statement = $pdo->prepare(
-        'UPDATE pf_internal_transfers
-         SET status = :status, confirmed_at = CASE WHEN :status = "CONFIRMED" THEN NOW() ELSE NULL END
-         WHERE id = :id AND status = "PENDING"'
-    );
-    $statement->execute([':status' => $status, ':id' => $transferId]);
+    $statement = $pdo->prepare(account_tracker_transfer_status_update_sql());
+    $statement->execute([
+        ':status' => $status,
+        ':is_confirmed' => $status === 'CONFIRMED' ? 1 : 0,
+        ':id' => $transferId,
+    ]);
     if ($statement->rowCount() !== 1) {
         throw new RuntimeException('Trasferimento non disponibile per la conferma.');
     }

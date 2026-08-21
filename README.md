@@ -2,7 +2,21 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.4.0`
+Versione corrente: `2.5.3`
+
+## Credit Lombard e trasferimenti interni documentati
+
+Il portafoglio resta il dato obbligatorio; i dati conto e l'export Patrimonio Fineco restano opzionali. Un trasferimento con contabile Fineco `GIRO INT PAR INT` puo essere registrato dalla pagina **Dossier** come giro interno, non come vendita.
+
+La procedura non modifica nulla fino alla conferma. Cerca soltanto gli snapshot in cui il titolo e assente dal dossier ordinario, non e gia presente nel dossier Credit Lombard e l'export Patrimonio Fineco contiene il controvalore del dossier a pegno. Per ogni snapshot applicato crea un backup logico in `pf_snapshot_revisions`, conserva costo e PMC della posizione precedente e usa il controvalore Fineco del dossier a pegno come valore di mercato.
+
+L'export separato del dossier Credit Lombard si importa dal proprio slot in **Upload**: Fineco puo assegnare lo stesso filename ai due file, ma l'app identifica il dossier dal flusso scelto. L'import ufficiale sostituisce la sola posizione manuale gia confermata dalla relativa contabile, mantenendo il backup logico dello snapshot.
+
+Prima dell import di entrambi i dossier l app mostra un riepilogo con dossier rilevato, numero posizioni, valore di carico e valore di mercato. Se l export contiene un riferimento affidabile incompatibile con lo slot, l import si blocca; se non contiene un identificativo affidabile, il filename non viene usato e serve una conferma manuale dello slot.
+
+Non e previsto OCR automatico delle contabili PDF su Aruba: il riferimento al documento, le date e gli importi tecnici vengono registrati come evidenza dichiarata e verificabile.
+
+Per aggiornare un database gia alla versione 2.4.0, esporta prima un backup completo e importa una volta `sql/migration_2_5_0_documented_internal_transfers.sql` tramite phpMyAdmin.
 
 ## Deploy (FTP)
 
@@ -83,10 +97,11 @@ Il portafoglio resta la base obbligatoria dell'app. Tutte le altre funzioni sono
 
 Per una prima installazione del modulo Conto importa prima `sql/migration_2_2_0_account_tracker.sql`. Per aggiornare un modulo Conto gia presente, prima esporta il database completo da phpMyAdmin, poi importa **una sola volta** `sql/migration_2_4_0_credit_lombard_semantics.sql`. Aruba non offre un backup automatico affidabile da PHP senza shell: l'export phpMyAdmin e il backup completo da conservare prima della migrazione. La migrazione aggiunge soltanto colonne nullable e non modifica gli snapshot esistenti. Ogni modifica manuale a uno snapshot gia esistente crea inoltre un backup logico recuperabile in `pf_snapshot_revisions`.
 
-In `Upload` sono disponibili due flussi distinti:
+In `Upload` sono disponibili tre flussi distinti:
 
-1. **Import portafoglio Fineco**: obbligatorio, con scelta del dossier di provenienza. Gli snapshot storici precedenti alla migrazione sono trattati automaticamente come dossier ordinario.
-2. **Import patrimonio Fineco**: facoltativo. Il parser riconosce le etichette Fineco, non righe fisse, e importa solo voci presenti: patrimonio totale, portafoglio totale, saldo contabile, saldo disponibile, totale liquidita, liquidita prenotata, multicurrency, fido e valori dossier. Nel file campione Fineco il dossier a pegno viene associato al dossier Credit Lombard; i suoi valori servono alla riconciliazione e non vengono sommati una seconda volta al patrimonio totale.
+1. **Portafoglio principale**: obbligatorio. Ogni file e importato nel dossier ordinario indipendentemente dal filename. Gli snapshot storici precedenti alla migrazione sono trattati automaticamente come dossier ordinario.
+2. **Dossier Credit Lombard**: facoltativo. Usa lo stesso parser del portafoglio principale, ma importa nel dossier Credit Lombard anche quando Fineco chiama entrambi i file `portafoglio-export.xls`.
+3. **Import patrimonio Fineco**: facoltativo. Il parser riconosce le etichette Fineco, non righe fisse, e importa solo voci presenti: patrimonio totale, portafoglio totale, saldo contabile, saldo disponibile, totale liquidita, liquidita prenotata, multicurrency, fido e valori dossier. Nel file campione Fineco il dossier a pegno viene associato al dossier Credit Lombard; i suoi valori servono alla riconciliazione e non vengono sommati una seconda volta al patrimonio totale.
 
 Le priorita sono: import Patrimonio Fineco, override manuale per la stessa data, valore calcolato se applicabile. Il payload importato e conservato insieme agli override manuali. Il credito disponibile non e mai patrimonio. Quando Fineco lo include in liquidita e patrimonio totale, l'app mostra separatamente Patrimonio Fineco e Patrimonio netto rettificato (`Patrimonio Fineco - fido disponibile`), oltre a Liquidita Fineco e Liquidita propria rettificata (`Liquidita Fineco - fido disponibile`). Il fido utilizzato usa il campo Fineco diretto quando presente, altrimenti solo il controllo `accordato - disponibile`.
 

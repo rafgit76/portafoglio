@@ -2,6 +2,49 @@
 
 return [
     [
+        'version' => '2.5.3',
+        'date' => '2026-08-21',
+        'title' => 'Conferma trasferimenti compatibile con Aruba',
+        'changes' => [
+            'Corretta la conferma o il rifiuto delle proposte di trasferimento interno con parametri SQL distinti, compatibili con i prepared statement nativi di Aruba.',
+            'La correzione aggiorna soltanto lo stato della proposta e non modifica posizioni, snapshot, P/L o patrimonio.',
+        ],
+    ],
+    [
+        'version' => '2.5.2',
+        'date' => '2026-08-21',
+        'title' => 'Verifica preventiva import multi-dossier',
+        'changes' => [
+            'Aggiunta un anteprima obbligatoria prima dell import di portafoglio principale o Dossier Credit Lombard, con posizioni, valore di carico e valore di mercato.',
+            'Se il file espone metadati affidabili di dossier incompatibili con lo slot scelto, l import viene bloccato prima di modificare gli snapshot.',
+            'Se Fineco non espone un identificativo affidabile, il filename non viene usato e l utente deve confermare esplicitamente lo slot selezionato.',
+        ],
+    ],
+    [
+        'version' => '2.5.1',
+        'date' => '2026-08-21',
+        'title' => 'Import separato del Dossier Credit Lombard',
+        'changes' => [
+            'Separati in Upload gli slot Portafoglio principale e Dossier Credit Lombard: i due export Fineco possono avere lo stesso filename senza essere confusi.',
+            'Il dossier viene deciso dal pulsante di import scelto e non dal nome del file; lo stesso parser XLS, XLSX o CSV e usato per entrambi i flussi.',
+            'Conservato il consolidamento automatico dello snapshot: carico, valore di mercato e P/L sommano i dossier senza alterare le posizioni raw importate.',
+            'Confermato il caso BTP trasferito: carico ordinario EUR 118.291,56 piu Credit Lombard EUR 20.000,00 uguale carico consolidato EUR 138.291,56.',
+        ],
+    ],
+    [
+        'version' => '2.5.0',
+        'date' => '2026-08-21',
+        'title' => 'Credit Lombard e giro interno documentato',
+        'changes' => [
+            'Aggiunta la procedura guidata per registrare un giro interno documentato da contabile Fineco con codice GIRO INT PAR INT, senza classificarlo come vendita o realizzo.',
+            'La correzione propone soltanto gli snapshot dove il titolo e assente dall ordinario, non e gia nel Lombard e il controvalore del dossier a pegno e disponibile nell export Patrimonio Fineco.',
+            'Per ogni snapshot confermato viene creato un backup logico, viene preservato il costo e il PMC storico e il valore di mercato deriva dal dossier a pegno dello stesso giorno.',
+            'Un futuro import ufficiale del dossier Credit Lombard puo sostituire la sola integrazione manuale gia confermata dalla contabile, senza bloccare l aggiornamento dello snapshot.',
+            'Aggiunti nel registro trasferimenti date di esecuzione e regolamento, riferimento contabile, rateo, ritenuta e totale economico come dati tecnici non realizzati.',
+            'Confermato il supporto al fido Fineco aggregato da 12.000 EUR: il credito disponibile resta escluso dal patrimonio netto rettificato.',
+        ],
+    ],
+    [
         'version' => '2.4.0',
         'date' => '2026-08-21',
         'title' => 'Patrimonio depurato dal credito disponibile',

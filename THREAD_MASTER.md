@@ -5,7 +5,28 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `2.4.0`
+- `2.5.3`
+
+Correzione compatibilita Aruba v2.5.3:
+- la conferma o il rifiuto di un trasferimento interno usa placeholder SQL distinti, evitando l errore PDO `HY093` con prepared statement nativi;
+- l operazione cambia soltanto lo stato della proposta e non altera posizioni o snapshot.
+
+Decisione sicurezza import multi-dossier v2.5.2:
+- ogni import di portafoglio passa prima da un anteprima server-side con numero posizioni, carico e mercato;
+- il parser cerca metadati di dossier nelle proprieta del file e nelle prime righe del foglio;
+- metadati affidabili incompatibili bloccano l import; assenza di metadati richiede una conferma manuale e non viene mai risolta dal filename.
+
+Decisione import multi-dossier v2.5.1:
+- Fineco puo denominare sia l export ordinario sia quello a garanzia `portafoglio-export.xls`: l app non usa il filename per decidere il dossier.
+- In Upload esistono gli slot distinti Portafoglio principale e Dossier Credit Lombard; entrambi usano il medesimo parser e alimentano lo stesso snapshot in dossier separati.
+- Il consolidamento continua a essere la somma delle posizioni dei dossier. Per il BTP trasferito il caso di riferimento e `118.291,56 + 20.000,00 = 138.291,56` di carico consolidato, senza vendita o P/L realizzato.
+- Nessuna migrazione aggiuntiva: schema, backup logico e gestione del giro interno documentato v2.5.0 restano invariati.
+
+Decisione Credit Lombard v2.5.0:
+- Il file Patrimonio Fineco post-attivazione Credit Lombard e opzionale e puo riportare un solo fido aggregato: l'import legge il valore effettivamente presente, senza hardcodare Minifido o Lombard.
+- `GIRO INT PAR INT` e un trasferimento interno documentato, mai vendita o P/L realizzato. La correzione viene proposta in Dossier, richiede conferma e genera un backup logico per ogni snapshot modificato.
+- Il costo e il PMC provengono dall'ultima posizione del dossier origine; il valore mercato viene applicato solo se l'export Patrimonio dello stesso giorno ha un controvalore del dossier a pegno verificabile.
+- Migrazione incrementale richiesta: `sql/migration_2_5_0_documented_internal_transfers.sql` dopo backup database. Nessun OCR PDF runtime su Aruba.
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto
@@ -325,6 +346,7 @@ Priorita alta:
 - mantenere le credenziali reali fuori da Git e dal file `config/config.php`
 
 Priorita media:
+- aggiornare la dashboard iniziale con un riepilogo progressivo del patrimonio: Patrimonio Fineco, patrimonio netto rettificato, liquidita propria, saldi e fidi, sempre separati dai dati del portafoglio e mostrati soltanto quando disponibili
 - rifinire validazioni upload
 - correggere stringhe con encoding imperfetto
 

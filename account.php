@@ -125,7 +125,7 @@ if (!$schemaReady) {
     ?>
     <section class="panel empty-state">
         <h2>Modulo conto da inizializzare</h2>
-        <p>Se il modulo Conto non era mai stato installato, importa prima <code>sql/migration_2_2_0_account_tracker.sql</code>; poi, dopo un export completo del database, importa una sola volta <code>sql/migration_2_4_0_credit_lombard_semantics.sql</code>.</p>
+        <p>Se il modulo Conto non era mai stato installato, importa prima <code>sql/migration_2_2_0_account_tracker.sql</code>; poi, dopo un export completo del database, applica in ordine <code>sql/migration_2_4_0_credit_lombard_semantics.sql</code> e <code>sql/migration_2_5_0_documented_internal_transfers.sql</code>.</p>
         <p class="tiny-note">Fino alla migrazione l'app continua a funzionare come tracker del solo portafoglio.</p>
     </section>
     <?php
@@ -145,6 +145,7 @@ $metrics = account_tracker_patrimonial_metrics($pdo);
 $latestPortfolio = $pdo->query('SELECT id, snapshot_date, total_market_value, total_cost_basis, total_unrealized_pnl FROM pf_snapshots ORDER BY snapshot_date DESC, id DESC LIMIT 1')->fetch();
 $dossierTotals = $latestPortfolio ? account_tracker_snapshot_dossier_totals($pdo, (int) $latestPortfolio['id']) : [];
 $pendingTransfers = account_tracker_pending_transfers($pdo);
+$confirmedTransfers = account_tracker_confirmed_transfers($pdo);
 $warningThreshold = app_setting('account_reconciliation_warn_pct', null);
 $showReconciliationWarning = is_numeric($warningThreshold)
     && $metrics['difference_pct'] !== null
@@ -259,6 +260,13 @@ include __DIR__ . '/partials/header.php';
         <article class="card"><h3>Utilizzato</h3><p class="big <?= (float) ($metrics['credit']['used_amount'] ?? 0) > 0 ? 'neg' : '' ?>"><?= e($money($metrics['credit']['used_amount'] !== null ? (float) $metrics['credit']['used_amount'] : null)) ?></p></article>
         <article class="card"><h3>Disponibile</h3><p class="big"><?= e($money($metrics['credit']['available_amount'] !== null ? (float) $metrics['credit']['available_amount'] : null)) ?></p><p class="tiny-note">Escluso dal patrimonio</p></article>
     </div>
+</section>
+<?php endif; ?>
+
+<?php if ($confirmedTransfers): ?>
+<section class="panel">
+    <div class="panel-head"><div><p class="eyebrow">STORICO CONSOLIDATO</p><h2>Trasferimenti interni documentati</h2><p class="tiny-note">Sono giri interni tra dossier: non rappresentano vendite, perdite o P/L realizzato.</p></div><a class="btn btn-secondary" href="<?= e(app_base_path()) ?>/dossiers.php#transfer-documentato">Registra trasferimento</a></div>
+    <div class="table-wrap"><table><thead><tr><th>Titolo</th><th>Esecuzione</th><th>Dossier</th><th>Quantita</th><th>Carico storico</th><th>Contabile</th></tr></thead><tbody><?php foreach ($confirmedTransfers as $transfer): ?><tr><td><strong><?= e((string) $transfer['asset_name']) ?></strong><br><span class="tiny-note"><?= e((string) ($transfer['isin'] ?? '-')) ?></span></td><td><?= e((string) ($transfer['execution_date'] ?? $transfer['target_snapshot_date'])) ?><br><span class="tiny-note"><?= e((string) ($transfer['operation_code'] ?? 'Trasferimento interno')) ?></span></td><td><?= e((string) $transfer['source_dossier_name']) ?> → <?= e((string) $transfer['target_dossier_name']) ?></td><td><?= number_format((float) $transfer['quantity'], 2, ',', '.') ?></td><td>EUR <?= number_format((float) ($transfer['source_cost_basis'] ?? 0), 2, ',', '.') ?></td><td><?= e((string) ($transfer['source_document_name'] ?? 'Non indicata')) ?></td></tr><?php endforeach; ?></tbody></table></div>
 </section>
 <?php endif; ?>
 

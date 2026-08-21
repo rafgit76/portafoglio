@@ -7,12 +7,54 @@ require_once __DIR__ . '/lib/fineco_patrimony_importer.php';
 $pageTitle = 'Upload snapshot';
 $pdo = db();
 $accountTrackerEnabled = account_tracker_schema_ready($pdo);
-$dossiers = $accountTrackerEnabled ? account_tracker_dossiers($pdo) : [];
+
+function upload_pending_import_path(string $fileName): string
+{
+    if ($fileName === '' || basename($fileName) !== $fileName) {
+        throw new RuntimeException('Riferimento del file in attesa non valido.');
+    }
+
+    return __DIR__ . '/storage/uploads/pending_imports/' . $fileName;
+}
+
+function upload_clear_pending_import(): void
+{
+    $pending = $_SESSION['portfolio_import_preview'] ?? null;
+    if (is_array($pending) && isset($pending['file_name']) && is_string($pending['file_name'])) {
+        $path = upload_pending_import_path($pending['file_name']);
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+    unset($_SESSION['portfolio_import_preview']);
+}
+
+$pendingImportPreview = null;
+if (isset($_GET['confirm_import'])) {
+    $candidate = $_SESSION['portfolio_import_preview'] ?? null;
+    if (is_array($candidate) && hash_equals((string) ($candidate['token'] ?? ''), (string) $_GET['confirm_import']) && (int) ($candidate['expires_at'] ?? 0) >= time()) {
+        $pendingImportPreview = $candidate;
+    } elseif (is_array($candidate) && (int) ($candidate['expires_at'] ?? 0) < time()) {
+        upload_clear_pending_import();
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        $action = (string) ($_POST['action'] ?? 'import');
-        if (!in_array($action, ['import', 'convert', 'import_patrimony'], true)) {
+        $action = (string) ($_POST['action'] ?? 'import_main');
+        $portfolioPreviewActions = [
+            'preview_main' => 'main',
+            'import_main' => 'main',
+            'preview_credit_lombard' => 'credit_lombard',
+            'import_credit_lombard' => 'credit_lombard',
+            'import' => 'main',
+        ];
+        $portfolioConvertActions = [
+            'convert_main' => 'main',
+            'convert_credit_lombard' => 'credit_lombard',
+            'convert' => 'main',
+        ];
+        if (!isset($portfolioPreviewActions[$action]) && !isset($portfolioConvertActions[$action]) && !in_array($action, ['import_patrimony', 'confirm_portfolio_import', 'cancel_portfolio_import'], true)) {
             throw new RuntimeException('Azione non valida.');
         }
 
@@ -21,7 +63,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException('Richiesta non valida (token).');
         }
 
-        $fileField = $action === 'import_patrimony' ? 'patrimony_file' : 'snapshot_file';
+        if ($action === 'cancel_portfolio_import') {
+            $pending = $_SESSION['portfolio_import_preview'] ?? null;
+            if (!is_array($pending) || !hash_equals((string) ($pending['token'] ?? ''), (string) ($_POST['preview_token'] ?? ''))) {
+                throw new RuntimeException('Anteprima import non disponibile o scaduta.');
+            }
+            upload_clear_pending_import();
+            set_flash('success', 'Anteprima import annullata. Nessuno snapshot e stato modificato.');
+            redirect('/upload.php');
+        }
+
+        if ($action === 'confirm_portfolio_import') {
+            $pending = $_SESSION['portfolio_import_preview'] ?? null;
+            if (!is_array($pending) || !hash_equals((string) ($pending['token'] ?? ''), (string) ($_POST['preview_token'] ?? '')) || (int) ($pending['expires_at'] ?? 0) < time()) {
+                upload_clear_pending_import();
+                throw new RuntimeException('Anteprima import scaduta. Carica nuovamente il file.');
+            }
+            if (!empty($pending['requires_manual_confirmation']) && ($_POST['confirm_unverified_dossier'] ?? '') !== '1') {
+                set_flash('error', 'Conferma esplicitamente lo slot del dossier prima di importare un file senza identificativo affidabile.');
+                redirect('/upload.php?confirm_import=' . rawurlencode((string) $pending['token']));
+            }
+
+            $portfolioSlot = (string) $pending['slot'];
+            $slotDefinition = fineco_portfolio_import_slot($portfolioSlot);
+            if ($portfolioSlot === 'credit_lombard' && !$accountTrackerEnabled) {
+                throw new RuntimeException('Il modulo Conto deve essere inizializzato prima di importare il Dossier Credit Lombard.');
+            }
+            $target = upload_pending_import_path((string) $pending['file_name']);
+            if (!is_file($target)) {
+                upload_clear_pending_import();
+                throw new RuntimeException('Il file dell anteprima non e piu disponibile. Caricalo nuovamente.');
+            }
+
+            try {
+                $result = import_fineco_spreadsheet(
+                    $target,
+                    (string) $pending['generated_file_name'],
+                    (string) $pending['snapshot_date'],
+                    (string) $slotDefinition['dossier_code']
+                );
+            } finally {
+                upload_clear_pending_import();
+            }
+
+            $message = 'Import completato per ' . (string) $slotDefinition['label'] . '. Posizioni caricate: ' . $result['positions'];
+            if (!empty($result['transfer_candidates'])) {
+                $message .= '. Rilevato un possibile trasferimento interno: verifica la proposta nel modulo Conto.';
+            }
+            set_flash('success', $message);
+            redirect('/snapshot.php?id=' . (int) $result['snapshot_id']);
+        }
+
+        $portfolioSlot = $portfolioPreviewActions[$action] ?? ($portfolioConvertActions[$action] ?? null);
+        $fileField = match ($action) {
+            'import_patrimony' => 'patrimony_file',
+            'preview_credit_lombard', 'import_credit_lombard', 'convert_credit_lombard' => 'credit_lombard_file',
+            default => 'snapshot_file',
+        };
         if (!isset($_FILES[$fileField]) || $_FILES[$fileField]['error'] !== UPLOAD_ERR_OK) {
             throw new RuntimeException('Seleziona un file .xls, .xlsx o .csv valido.');
         }
@@ -53,12 +151,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $generatedAt = new DateTimeImmutable('now');
-        $generatedBaseName = ($action === 'import_patrimony' ? 'patrimonio-fineco_' : 'portafoglio-export_')
+        $slotDefinition = $portfolioSlot !== null ? fineco_portfolio_import_slot($portfolioSlot) : null;
+        $generatedBaseName = ($action === 'import_patrimony'
+            ? 'patrimonio-fineco_'
+            : (string) ($slotDefinition['file_prefix'] ?? 'portafoglio-principale_'))
             . $snapshotDateObj->format('Ymd')
             . '_'
             . $generatedAt->format('Hi');
 
-        if ($action === 'convert') {
+        if (isset($portfolioConvertActions[$action])) {
             if ($detectedExtension === 'csv') {
                 throw new RuntimeException('La conversione in XLSX e disponibile per file .xls o .xlsx. Il CSV puo essere importato direttamente.');
             }
@@ -86,6 +187,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        if (isset($portfolioPreviewActions[$action])) {
+            if ($portfolioSlot === 'credit_lombard' && !$accountTrackerEnabled) {
+                throw new RuntimeException('Il modulo Conto deve essere inizializzato prima di importare il Dossier Credit Lombard.');
+            }
+
+            $parser = new FinecoXlsxParser();
+            $positions = $parser->parse($f['tmp_name']);
+            $inspection = $parser->inspectDossierMetadata($f['tmp_name']);
+            if (!empty($inspection['reliable']) && (string) $inspection['detected_slot'] !== $portfolioSlot) {
+                $suggestedSlot = fineco_portfolio_import_slot((string) $inspection['detected_slot']);
+                throw new RuntimeException('Il file caricato sembra appartenere a ' . $suggestedSlot['label'] . ' e non a ' . $slotDefinition['label'] . '. Usa lo slot corretto.');
+            }
+
+            $summary = ['positions' => count($positions), 'cost_basis' => 0.0, 'market_value' => 0.0];
+            foreach ($positions as $position) {
+                $summary['cost_basis'] += $position->costBasis;
+                $summary['market_value'] += $position->marketValue;
+            }
+
+            upload_clear_pending_import();
+            $pendingDir = __DIR__ . '/storage/uploads/pending_imports';
+            ensure_directory($pendingDir);
+            $pendingFileName = bin2hex(random_bytes(18)) . '.' . $detectedExtension;
+            if (!move_uploaded_file($f['tmp_name'], upload_pending_import_path($pendingFileName))) {
+                throw new RuntimeException('Impossibile preparare l anteprima sicura dell import.');
+            }
+
+            $previewToken = bin2hex(random_bytes(24));
+            $_SESSION['portfolio_import_preview'] = [
+                'token' => $previewToken,
+                'expires_at' => time() + 900,
+                'file_name' => $pendingFileName,
+                'generated_file_name' => $generatedBaseName . '.' . $detectedExtension,
+                'snapshot_date' => $snapshotDate,
+                'slot' => $portfolioSlot,
+                'slot_label' => (string) $slotDefinition['label'],
+                'inspection' => $inspection,
+                'summary' => $summary,
+                'requires_manual_confirmation' => empty($inspection['reliable']),
+            ];
+            redirect('/upload.php?confirm_import=' . rawurlencode($previewToken));
+        }
+
         $uploadDir = __DIR__ . '/storage/uploads';
         ensure_directory($uploadDir);
 
@@ -99,12 +243,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         @chmod($target, 0664);
 
         try {
-            if ($action === 'import_patrimony') {
-                $result = import_fineco_patrimony_spreadsheet($target, $generatedFileName, $snapshotDate);
-            } else {
-                $dossierCode = $accountTrackerEnabled ? trim((string) ($_POST['dossier_code'] ?? 'ordinario')) : 'ordinario';
-                $result = import_fineco_spreadsheet($target, $generatedFileName, $snapshotDate, $dossierCode);
-            }
+            $result = import_fineco_patrimony_spreadsheet($target, $generatedFileName, $snapshotDate);
         } finally {
             @unlink($target);
         }
@@ -113,10 +252,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('success', $message);
             redirect('/account.php?date=' . rawurlencode((string) $result['snapshot_date']));
         }
-        $message = 'Import completato da ' . $generatedFileName . '. Posizioni caricate: ' . $result['positions'];
-        if (!empty($result['transfer_candidates'])) { $message .= '. Rilevato un possibile trasferimento interno: verifica la proposta nel modulo Conto.'; }
-        set_flash('success', $message);
-        redirect('/snapshot.php?id=' . (int) $result['snapshot_id']);
     } catch (Throwable $e) {
         set_flash('error', 'Import fallito: ' . $e->getMessage());
         redirect('/upload.php');
@@ -125,10 +260,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 include __DIR__ . '/partials/header.php';
 ?>
+<?php if ($pendingImportPreview !== null): ?>
+    <?php $inspection = (array) ($pendingImportPreview['inspection'] ?? []); $summary = (array) ($pendingImportPreview['summary'] ?? []); ?>
+    <section class="panel narrow upload-confirmation">
+        <p class="eyebrow">Verifica prima dell'import</p>
+        <h2>Riepilogo dossier</h2>
+        <div class="stat-grid compact-stats">
+            <article class="stat-card"><span>Dossier selezionato</span><strong><?= e((string) $pendingImportPreview['slot_label']) ?></strong></article>
+            <article class="stat-card"><span>Dossier rilevato</span><strong><?= e((string) ($inspection['label'] ?? 'Non rilevato')) ?></strong></article>
+            <article class="stat-card"><span>Numero posizioni</span><strong><?= e((string) ($summary['positions'] ?? 0)) ?></strong></article>
+            <article class="stat-card"><span>Valore di carico</span><strong><?= e(format_currency((float) ($summary['cost_basis'] ?? 0))) ?></strong></article>
+            <article class="stat-card"><span>Valore di mercato</span><strong><?= e(format_currency((float) ($summary['market_value'] ?? 0))) ?></strong></article>
+        </div>
+        <?php if (!empty($inspection['evidence'])): ?>
+            <p class="tiny-note">Identificativo rilevato: <?= e(implode(' | ', (array) $inspection['evidence'])) ?></p>
+        <?php endif; ?>
+        <?php if (empty($inspection['reliable'])): ?>
+            <p class="warning-note">Il file non contiene un identificativo affidabile del dossier. Il filename non viene usato: conferma manualmente che lo slot selezionato e corretto.</p>
+        <?php endif; ?>
+        <form method="post" class="inline-confirm-form">
+            <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="preview_token" value="<?= e((string) $pendingImportPreview['token']) ?>">
+            <?php if (empty($inspection['reliable'])): ?>
+                <label class="confirm-check"><input type="checkbox" name="confirm_unverified_dossier" value="1" required> Confermo che il file appartiene allo slot selezionato.</label>
+            <?php endif; ?>
+            <div class="upload-actions">
+                <button type="submit" name="action" value="confirm_portfolio_import">Conferma e importa</button>
+                <button type="submit" name="action" value="cancel_portfolio_import" class="btn-secondary">Annulla</button>
+            </div>
+        </form>
+    </section>
+<?php endif; ?>
 <section class="panel narrow">
-    <h2>Import portafoglio Fineco</h2>
-    <p>Carica direttamente l'export Fineco `.xls`, `.xlsx` o `.csv` (Portafoglio di sintesi). Non serve aprirlo con Excel.</p>
-    <p class="tiny-note">La data resta modificabile; il nome con data e ora viene generato automaticamente dall'app.</p>
+    <h2>Portafoglio principale</h2>
+    <p>Obbligatorio. Carica l'export Fineco `.xls`, `.xlsx` o `.csv` del dossier principale. Non serve aprirlo con Excel.</p>
+    <p class="tiny-note">Il dossier e determinato da questo slot, non dal nome del file. La data resta modificabile.</p>
     <form method="post" enctype="multipart/form-data" class="form-grid">
         <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
         <label>
@@ -139,26 +305,33 @@ include __DIR__ . '/partials/header.php';
             File Excel
             <input type="file" name="snapshot_file" accept=".xls,.xlsx,.csv" required>
         </label>
-        <?php if ($accountTrackerEnabled): ?>
-            <label>
-                Dossier di provenienza
-                <select name="dossier_code">
-                    <?php foreach ($dossiers as $dossier): ?>
-                        <option value="<?= e((string) $dossier['code']) ?>" <?= (string) $dossier['code'] === 'ordinario' ? 'selected' : '' ?>>
-                            <?= e((string) $dossier['name']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <span class="tiny-note">Ogni import aggiorna soltanto il dossier selezionato e ricalcola il totale consolidato.</span>
-            </label>
-        <?php endif; ?>
         <div class="upload-actions">
-            <button type="submit" name="action" value="import">Importa snapshot</button>
-            <button type="submit" name="action" value="convert" class="btn-secondary">Converti e scarica XLSX</button>
+            <button type="submit" name="action" value="preview_main">Verifica portafoglio principale</button>
+            <button type="submit" name="action" value="convert_main" class="btn-secondary">Converti e scarica XLSX</button>
         </div>
     </form>
 </section>
 <?php if ($accountTrackerEnabled): ?>
+<section class="panel narrow">
+    <h2>Dossier Credit Lombard</h2>
+    <p>Opzionale. Carica qui l'export dei titoli vincolati a garanzia. Può avere lo stesso filename del portafoglio principale.</p>
+    <p class="tiny-note">Questo slot aggiorna solo il dossier Credit Lombard e ricalcola automaticamente i valori consolidati dello stesso snapshot.</p>
+    <form method="post" enctype="multipart/form-data" class="form-grid">
+        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+        <label>
+            Data snapshot
+            <input type="date" name="snapshot_date" required value="<?= e(date('Y-m-d')) ?>">
+        </label>
+        <label>
+            File Excel Dossier Credit Lombard
+            <input type="file" name="credit_lombard_file" accept=".xls,.xlsx,.csv" required>
+        </label>
+        <div class="upload-actions">
+            <button type="submit" name="action" value="preview_credit_lombard">Verifica Dossier Credit Lombard</button>
+            <button type="submit" name="action" value="convert_credit_lombard" class="btn-secondary">Converti e scarica XLSX</button>
+        </div>
+    </form>
+</section>
 <section class="panel narrow">
     <h2>Import patrimonio Fineco</h2>
     <p>Opzionale. Carica l'export Patrimonio Fineco per aggiornare automaticamente patrimonio, saldi, liquidita, fidi e valori dei dossier.</p>

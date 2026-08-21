@@ -76,6 +76,94 @@ final class FinecoXlsxParser
         return $this->parseWithSimpleReader($spreadsheetPath);
     }
 
+    public function inspectDossierMetadata(string $spreadsheetPath): array
+    {
+        $emptyResult = [
+            'reliable' => false,
+            'detected_slot' => null,
+            'label' => 'Non rilevato',
+            'evidence' => [],
+        ];
+
+        if (!class_exists(IOFactory::class) || strtolower(pathinfo($spreadsheetPath, PATHINFO_EXTENSION)) === 'csv') {
+            return $emptyResult;
+        }
+
+        $readerType = IOFactory::identify($spreadsheetPath);
+        if (!in_array($readerType, ['Xls', 'Xlsx'], true)) {
+            return $emptyResult;
+        }
+
+        $reader = IOFactory::createReader($readerType);
+        $reader->setReadDataOnly(true);
+        $spreadsheet = $reader->load($spreadsheetPath);
+
+        try {
+            $sheet = $spreadsheet->getActiveSheet();
+            $texts = [];
+            $properties = $spreadsheet->getProperties();
+            foreach ([$properties->getTitle(), $properties->getSubject(), $properties->getDescription(), $properties->getKeywords()] as $value) {
+                $value = trim((string) $value);
+                if ($value !== '') {
+                    $texts[] = $value;
+                }
+            }
+
+            $maxRow = min(120, $sheet->getHighestDataRow());
+            $maxCol = Coordinate::columnIndexFromString($sheet->getHighestDataColumn());
+            for ($row = 1; $row <= $maxRow; $row++) {
+                $cells = [];
+                for ($col = 1; $col <= $maxCol; $col++) {
+                    $value = trim((string) $sheet->getCell([$col, $row])->getFormattedValue());
+                    if ($value !== '') {
+                        $cells[] = $value;
+                    }
+                }
+                if ($cells !== []) {
+                    $texts[] = implode(' ', $cells);
+                }
+            }
+
+            $matches = [
+                'credit_lombard' => [],
+                'main' => [],
+            ];
+            foreach ($texts as $text) {
+                $normalized = $this->normalizeDossierMetadata($text);
+                if (str_contains($normalized, 'credit lombard') || str_contains($normalized, 'dossier a pegno') || str_contains($normalized, 'dossier a garanzia') || str_contains($normalized, ' a pegno')) {
+                    $matches['credit_lombard'][] = $text;
+                    continue;
+                }
+                if (str_contains($normalized, 'dossier ordinario') || str_contains($normalized, 'dossier principale')) {
+                    $matches['main'][] = $text;
+                }
+            }
+
+            $creditMatches = array_values(array_unique($matches['credit_lombard']));
+            $mainMatches = array_values(array_unique($matches['main']));
+            if ($creditMatches !== [] && $mainMatches === []) {
+                return [
+                    'reliable' => true,
+                    'detected_slot' => 'credit_lombard',
+                    'label' => 'Dossier Credit Lombard',
+                    'evidence' => array_slice($creditMatches, 0, 3),
+                ];
+            }
+            if ($mainMatches !== [] && $creditMatches === []) {
+                return [
+                    'reliable' => true,
+                    'detected_slot' => 'main',
+                    'label' => 'Portafoglio principale',
+                    'evidence' => array_slice($mainMatches, 0, 3),
+                ];
+            }
+
+            return $emptyResult;
+        } finally {
+            $spreadsheet->disconnectWorksheets();
+        }
+    }
+
     private function parseWithPhpSpreadsheet(string $spreadsheetPath): array
     {
         $readerType = IOFactory::identify($spreadsheetPath);
@@ -395,6 +483,15 @@ final class FinecoXlsxParser
             'var percentuale' => 'var',
             default => $header,
         };
+    }
+
+    private function normalizeDossierMetadata(string $value): string
+    {
+        $value = trim(mb_strtolower($value, 'UTF-8'));
+        $value = normalize_ascii($value);
+        $value = preg_replace('/\s+/', ' ', $value) ?? '';
+
+        return trim($value);
     }
 }
 
