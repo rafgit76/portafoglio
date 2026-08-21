@@ -5,7 +5,13 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `2.5.3`
+- `2.6.0`
+
+Profilo ufficiale Credit Lombard v2.6.0:
+- `pf_credit_lines.credit_type` resta il tipo canonico della linea e `agreed_amount` resta l importo accordato, evitando colonne duplicate;
+- conto ordinario collegato, conto a pegno e dossier a garanzia hanno identificativi separati; conto e dossier possono condividere il numero Fineco ma restano entita logiche differenti;
+- validita, attivazione, provenienza `fineco_acceptance_letter` e documento sorgente sono salvati nell anagrafica della linea;
+- la migrazione `sql/migration_2_6_0_credit_lombard_profile.sql` non modifica snapshot, posizioni, P/L o consolidamento.
 
 Correzione compatibilita Aruba v2.5.3:
 - la conferma o il rifiuto di un trasferimento interno usa placeholder SQL distinti, evitando l errore PDO `HY093` con prepared statement nativi;

@@ -8,9 +8,11 @@ $pdo = db();
 if (!account_tracker_schema_ready($pdo)) {
     include __DIR__ . '/partials/header.php';
     ?>
-    <section class="panel empty-state"><h2>Modulo conto da inizializzare</h2><p>Se il modulo non era mai stato installato, importa prima <code>sql/migration_2_2_0_account_tracker.sql</code>; poi importa <code>sql/migration_2_4_0_credit_lombard_semantics.sql</code> dopo un export completo da phpMyAdmin.</p></section>
+    <section class="panel empty-state"><h2>Modulo conto da inizializzare</h2><p>Se il modulo non era mai stato installato, importa prima <code>sql/migration_2_2_0_account_tracker.sql</code>; quindi applica in ordine le migrazioni <code>2_4_0</code>, <code>2_5_0</code> e <code>2_6_0</code> dopo un export completo da phpMyAdmin.</p></section>
     <?php include __DIR__ . '/partials/footer.php'; exit;
 }
+
+$profileSchemaReady = account_tracker_credit_profile_schema_ready($pdo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -47,6 +49,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $dossierId = null;
         }
         $rate = account_tracker_optional_decimal($_POST['annual_rate'] ?? null, 'tasso');
+        $activationDate = trim((string) ($_POST['activation_date'] ?? ''));
+        if ($activationDate !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $activationDate) || strtotime($activationDate) === false)) {
+            throw new RuntimeException('Data di attivazione non valida.');
+        }
         $date = trim((string) ($_POST['usage_snapshot_date'] ?? date('Y-m-d')));
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
             throw new RuntimeException('Data rilevazione fido non valida.');
@@ -60,18 +66,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':used_amount' => $used,
             ':annual_rate' => $rate,
             ':rate_formula' => trim((string) ($_POST['rate_formula'] ?? '')) ?: null,
-            ':activation_date' => trim((string) ($_POST['activation_date'] ?? '')) ?: null,
+            ':activation_date' => $activationDate !== '' ? $activationDate : null,
             ':status' => $status,
             ':dossier_id' => $dossierId,
             ':notes' => trim((string) ($_POST['notes'] ?? '')) ?: null,
         ];
+        if ($profileSchemaReady) {
+            $validityType = strtoupper(trim((string) ($_POST['validity_type'] ?? '')));
+            if ($validityType !== '' && !in_array($validityType, ['REVOCABLE', 'FIXED_TERM', 'OTHER'], true)) {
+                throw new RuntimeException('Tipo di validita non valido.');
+            }
+            $identifier = static function (mixed $raw, string $label): ?string {
+                $value = trim((string) $raw);
+                if ($value === '') {
+                    return null;
+                }
+                if (strlen($value) > 64 || !preg_match('/^[A-Za-z0-9._-]+$/', $value)) {
+                    throw new RuntimeException($label . ' non valido.');
+                }
+                return $value;
+            };
+            $dataOrigin = strtolower(trim((string) ($_POST['data_origin'] ?? 'manual')));
+            if (!in_array($dataOrigin, ['manual', 'fineco_acceptance_letter'], true)) {
+                throw new RuntimeException('Provenienza della linea di credito non valida.');
+            }
+            $sourceDocumentName = trim((string) ($_POST['source_document_name'] ?? ''));
+            if (mb_strlen($sourceDocumentName) > 255) {
+                throw new RuntimeException('Nome del documento sorgente troppo lungo.');
+            }
+            if ($dataOrigin === 'fineco_acceptance_letter' && $sourceDocumentName === '') {
+                throw new RuntimeException('Indica il documento Fineco che certifica il rapporto.');
+            }
+            $data += [
+                ':validity_type' => $validityType !== '' ? $validityType : null,
+                ':linked_main_account_id' => $identifier($_POST['linked_main_account_id'] ?? null, 'Conto collegato'),
+                ':pledge_account_id' => $identifier($_POST['pledge_account_id'] ?? null, 'Conto a pegno'),
+                ':pledge_dossier_id' => $identifier($_POST['pledge_dossier_id'] ?? null, 'Dossier a garanzia'),
+                ':data_origin' => $dataOrigin,
+                ':source_document_name' => $sourceDocumentName !== '' ? basename($sourceDocumentName) : null,
+            ];
+        }
         $pdo->beginTransaction();
         if ($id > 0) {
             $data[':id'] = $id;
-            $statement = $pdo->prepare('UPDATE pf_credit_lines SET name=:name, bank_name=:bank_name, credit_type=:credit_type, agreed_amount=:agreed_amount, used_amount=:used_amount, annual_rate=:annual_rate, rate_formula=:rate_formula, activation_date=:activation_date, status=:status, dossier_id=:dossier_id, notes=:notes WHERE id=:id');
+            $statement = $pdo->prepare($profileSchemaReady
+                ? 'UPDATE pf_credit_lines SET name=:name, bank_name=:bank_name, credit_type=:credit_type, agreed_amount=:agreed_amount, used_amount=:used_amount, annual_rate=:annual_rate, rate_formula=:rate_formula, activation_date=:activation_date, status=:status, validity_type=:validity_type, linked_main_account_id=:linked_main_account_id, pledge_account_id=:pledge_account_id, pledge_dossier_id=:pledge_dossier_id, data_origin=:data_origin, source_document_name=:source_document_name, dossier_id=:dossier_id, notes=:notes WHERE id=:id'
+                : 'UPDATE pf_credit_lines SET name=:name, bank_name=:bank_name, credit_type=:credit_type, agreed_amount=:agreed_amount, used_amount=:used_amount, annual_rate=:annual_rate, rate_formula=:rate_formula, activation_date=:activation_date, status=:status, dossier_id=:dossier_id, notes=:notes WHERE id=:id');
             $statement->execute($data);
         } else {
-            $statement = $pdo->prepare('INSERT INTO pf_credit_lines (name, bank_name, credit_type, agreed_amount, used_amount, annual_rate, rate_formula, activation_date, status, dossier_id, notes) VALUES (:name,:bank_name,:credit_type,:agreed_amount,:used_amount,:annual_rate,:rate_formula,:activation_date,:status,:dossier_id,:notes)');
+            $statement = $pdo->prepare($profileSchemaReady
+                ? 'INSERT INTO pf_credit_lines (name, bank_name, credit_type, agreed_amount, used_amount, annual_rate, rate_formula, activation_date, status, validity_type, linked_main_account_id, pledge_account_id, pledge_dossier_id, data_origin, source_document_name, dossier_id, notes) VALUES (:name,:bank_name,:credit_type,:agreed_amount,:used_amount,:annual_rate,:rate_formula,:activation_date,:status,:validity_type,:linked_main_account_id,:pledge_account_id,:pledge_dossier_id,:data_origin,:source_document_name,:dossier_id,:notes)'
+                : 'INSERT INTO pf_credit_lines (name, bank_name, credit_type, agreed_amount, used_amount, annual_rate, rate_formula, activation_date, status, dossier_id, notes) VALUES (:name,:bank_name,:credit_type,:agreed_amount,:used_amount,:annual_rate,:rate_formula,:activation_date,:status,:dossier_id,:notes)');
             $statement->execute($data);
             $id = (int) $pdo->lastInsertId();
         }
@@ -97,7 +142,8 @@ $value = static fn(string $key, string $fallback = ''): string => e((string) ($e
 include __DIR__ . '/partials/header.php';
 ?>
 <section class="panel account-hero"><div class="panel-head"><div><p class="eyebrow">GESTIONE</p><h2>Fidi e linee di credito</h2><p>Accordato, utilizzato e disponibile sono sempre separati dal patrimonio.</p></div><a class="btn btn-secondary" href="<?= e(app_base_path()) ?>/account.php">Conto e patrimonio</a></div></section>
-<section class="panel"><div class="panel-head"><h2><?= $editing ? 'Modifica linea di credito' : 'Nuova linea di credito' ?></h2><span class="tiny-note">L\'importo disponibile e accordato meno utilizzato.</span></div>
+<?php if (!$profileSchemaReady): ?><section class="panel warning-note"><strong>Profilo Credit Lombard da inizializzare.</strong> Dopo un backup completo del database, importa una volta <code>sql/migration_2_6_0_credit_lombard_profile.sql</code>. Le funzioni gia esistenti continuano a funzionare.</section><?php endif; ?>
+<section class="panel"><div class="panel-head"><h2><?= $editing ? 'Modifica linea di credito' : 'Nuova linea di credito' ?></h2><span class="tiny-note">L'importo disponibile e accordato meno utilizzato.</span></div>
 <form method="post" class="form-grid account-form"><input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><input type="hidden" name="credit_line_id" value="<?= (int) ($editing['id'] ?? 0) ?>">
 <label>Nome<input name="name" required value="<?= $value('name') ?>" placeholder="Es. Credit Lombard"></label><label>Banca<input name="bank_name" value="<?= $value('bank_name') ?>" placeholder="Es. Fineco"></label>
 <label>Tipo<select name="credit_type"><?php foreach (['CREDIT_LOMBARD'=>'Credit Lombard','MINIFIDO'=>'Minifido','FIDO_ORDINARIO'=>'Fido ordinario','ALTRO'=>'Altro'] as $key=>$label): ?><option value="<?= $key ?>" <?= ($editing['credit_type'] ?? 'ALTRO') === $key ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
@@ -106,7 +152,15 @@ include __DIR__ . '/partials/header.php';
 <label>Tasso annuo %<input name="annual_rate" inputmode="decimal" value="<?= $value('annual_rate') ?>"></label><label>Formula tasso<input name="rate_formula" value="<?= $value('rate_formula') ?>" placeholder="Es. Euribor 3M + spread"></label>
 <label>Data attivazione<input type="date" name="activation_date" value="<?= $value('activation_date') ?>"></label><label>Data rilevazione utilizzo<input type="date" name="usage_snapshot_date" value="<?= e(date('Y-m-d')) ?>"></label>
 <label>Stato<select name="status"><?php foreach (['ACTIVE'=>'Attivo','PAUSED'=>'Sospeso','CLOSED'=>'Chiuso'] as $key=>$label): ?><option value="<?= $key ?>" <?= ($editing['status'] ?? 'ACTIVE') === $key ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
+<?php if ($profileSchemaReady): ?>
+<label>Validita<select name="validity_type"><option value="">Non specificata</option><?php foreach (['REVOCABLE'=>'A revoca','FIXED_TERM'=>'A scadenza','OTHER'=>'Altra'] as $key=>$label): ?><option value="<?= $key ?>" <?= ($editing['validity_type'] ?? '') === $key ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
+<label>Conto collegato<input name="linked_main_account_id" value="<?= $value('linked_main_account_id') ?>" maxlength="64"></label>
+<label>Conto a pegno<input name="pledge_account_id" value="<?= $value('pledge_account_id') ?>" maxlength="64"></label>
+<label>Dossier a garanzia<input name="pledge_dossier_id" value="<?= $value('pledge_dossier_id') ?>" maxlength="64"></label>
+<label>Provenienza<select name="data_origin"><option value="manual" <?= ($editing['data_origin'] ?? 'manual') === 'manual' ? 'selected' : '' ?>>Manuale</option><option value="fineco_acceptance_letter" <?= ($editing['data_origin'] ?? '') === 'fineco_acceptance_letter' ? 'selected' : '' ?>>Lettera di accettazione Fineco</option></select></label>
+<label>Documento sorgente<input name="source_document_name" value="<?= $value('source_document_name') ?>" maxlength="255" placeholder="Es. lettera-accettazione.pdf"></label>
+<?php endif; ?>
 <label class="checkbox-label"><input type="checkbox" name="allow_over_agreement" value="1"> Confermo un utilizzato superiore all'accordato</label>
 <label class="form-full">Note<textarea name="notes" rows="3"><?= $value('notes') ?></textarea></label><div class="form-full"><button type="submit">Salva linea di credito</button></div></form></section>
-<section class="panel"><h2>Linee registrate</h2><?php if (!$lines): ?><p>Nessuna linea di credito configurata.</p><?php else: ?><table><thead><tr><th>Nome</th><th>Tipo</th><th>Accordato</th><th>Utilizzato</th><th>Disponibile</th><th>Stato</th><th></th></tr></thead><tbody><?php foreach ($lines as $line): ?><tr><td><strong><?= e((string) $line['name']) ?></strong><br><span class="tiny-note"><?= e((string) ($line['dossier_name'] ?? '')) ?></span></td><td><?= e(str_replace('_',' ',(string) $line['credit_type'])) ?></td><td>EUR <?= number_format((float) $line['agreed_amount'],2,',','.') ?></td><td class="<?= (float) $line['used_amount'] > 0 ? 'neg' : '' ?>">EUR <?= number_format((float) $line['used_amount'],2,',','.') ?></td><td>EUR <?= number_format((float) $line['available_amount'],2,',','.') ?></td><td><?= e((string) $line['status']) ?></td><td><a class="btn-link" href="<?= e(app_base_path()) ?>/credit_lines.php?edit=<?= (int) $line['id'] ?>">Modifica</a></td></tr><?php endforeach; ?></tbody></table><?php endif; ?></section>
+<section class="panel"><h2>Linee registrate</h2><?php if (!$lines): ?><p>Nessuna linea di credito configurata.</p><?php else: ?><table><thead><tr><th>Nome</th><th>Tipo</th><th>Accordato</th><th>Utilizzato</th><th>Disponibile</th><th>Stato</th><th></th></tr></thead><tbody><?php foreach ($lines as $line): $lineProfile = account_tracker_credit_line_profile($line); ?><tr><td><strong><?= e((string) $line['name']) ?></strong><br><span class="tiny-note"><?= e((string) ($line['dossier_name'] ?? '')) ?><?= $profileSchemaReady ? ' - ' . e($lineProfile['data_origin_label']) : '' ?></span></td><td><?= e($lineProfile['credit_line_type']) ?></td><td>EUR <?= number_format((float) $line['agreed_amount'],2,',','.') ?></td><td class="<?= (float) $line['used_amount'] > 0 ? 'neg' : '' ?>">EUR <?= number_format((float) $line['used_amount'],2,',','.') ?></td><td>EUR <?= number_format((float) $line['available_amount'],2,',','.') ?></td><td><?= e($lineProfile['status']) ?></td><td><a class="btn-link" href="<?= e(app_base_path()) ?>/credit_lines.php?edit=<?= (int) $line['id'] ?>">Modifica</a></td></tr><?php endforeach; ?></tbody></table><?php endif; ?></section>
 <?php include __DIR__ . '/partials/footer.php'; ?>

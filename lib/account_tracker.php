@@ -57,6 +57,35 @@ function account_tracker_schema_ready(?PDO $pdo = null): bool
     return $ready = true;
 }
 
+function account_tracker_credit_profile_schema_ready(?PDO $pdo = null): bool
+{
+    $pdo ??= db();
+    if (!account_tracker_schema_ready($pdo)) {
+        return false;
+    }
+
+    try {
+        $columns = $pdo->query('SHOW COLUMNS FROM `pf_credit_lines`')->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Throwable) {
+        return false;
+    }
+
+    foreach ([
+        'validity_type',
+        'linked_main_account_id',
+        'pledge_account_id',
+        'pledge_dossier_id',
+        'data_origin',
+        'source_document_name',
+    ] as $column) {
+        if (!in_array($column, $columns, true)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 function account_tracker_dossiers(PDO $pdo, bool $includeInactive = false): array
 {
     if (!account_tracker_schema_ready($pdo)) {
@@ -320,6 +349,85 @@ function account_tracker_patrimonial_dossier_values(PDO $pdo, int $patrimonialSn
     );
     $statement->execute([':id' => $patrimonialSnapshotId]);
     return $statement->fetchAll();
+}
+
+function account_tracker_credit_line_profile(array $line): array
+{
+    $typeCode = strtoupper((string) ($line['credit_type'] ?? 'ALTRO'));
+    $statusCode = strtoupper((string) ($line['status'] ?? 'ACTIVE'));
+    $validityCode = strtoupper((string) ($line['validity_type'] ?? ''));
+    $typeLabel = match ($typeCode) {
+        'CREDIT_LOMBARD' => 'Credit Lombard',
+        'MINIFIDO' => 'Minifido',
+        'FIDO_ORDINARIO' => 'Fido ordinario',
+        default => 'Altro',
+    };
+    $statusLabel = match ($statusCode) {
+        'ACTIVE' => $typeCode === 'CREDIT_LOMBARD' ? 'Operativo' : 'Attivo',
+        'PAUSED' => 'Sospeso',
+        'CLOSED' => 'Chiuso',
+        default => $statusCode,
+    };
+    $validityLabel = match ($validityCode) {
+        'REVOCABLE' => 'A revoca',
+        'FIXED_TERM' => 'A scadenza',
+        'OTHER' => 'Altra',
+        default => 'Non disponibile',
+    };
+    $source = strtolower((string) ($line['data_origin'] ?? 'manual'));
+
+    return [
+        'id' => isset($line['id']) ? (int) $line['id'] : null,
+        'name' => (string) ($line['name'] ?? $typeLabel),
+        'credit_line_type_code' => $typeCode,
+        'credit_line_type' => $typeLabel,
+        'status_code' => $statusCode,
+        'status' => $statusLabel,
+        'amount_granted' => isset($line['agreed_amount']) ? (float) $line['agreed_amount'] : null,
+        'validity_type_code' => $validityCode !== '' ? $validityCode : null,
+        'validity_type' => $validityLabel,
+        'linked_main_account_id' => trim((string) ($line['linked_main_account_id'] ?? '')) ?: null,
+        'pledge_account_id' => trim((string) ($line['pledge_account_id'] ?? '')) ?: null,
+        'pledge_dossier_id' => trim((string) ($line['pledge_dossier_id'] ?? '')) ?: null,
+        'activation_date' => trim((string) ($line['activation_date'] ?? '')) ?: null,
+        'data_origin' => $source,
+        'data_origin_label' => $source === 'fineco_acceptance_letter' ? 'Lettera di accettazione Fineco' : 'Manuale',
+        'source_document_name' => trim((string) ($line['source_document_name'] ?? '')) ?: null,
+        'relations' => [
+            [
+                'entity_type' => 'MAIN_ACCOUNT',
+                'label' => 'Conto collegato',
+                'identifier' => trim((string) ($line['linked_main_account_id'] ?? '')) ?: null,
+            ],
+            [
+                'entity_type' => 'PLEDGE_ACCOUNT',
+                'label' => 'Conto a pegno',
+                'identifier' => trim((string) ($line['pledge_account_id'] ?? '')) ?: null,
+            ],
+            [
+                'entity_type' => 'PLEDGE_DOSSIER',
+                'label' => 'Dossier a garanzia',
+                'identifier' => trim((string) ($line['pledge_dossier_id'] ?? '')) ?: null,
+            ],
+        ],
+    ];
+}
+
+function account_tracker_credit_lombard_profiles(PDO $pdo): array
+{
+    if (!account_tracker_credit_profile_schema_ready($pdo)) {
+        return [];
+    }
+
+    $rows = $pdo->query(
+        'SELECT c.*, d.name AS dossier_name
+         FROM pf_credit_lines c
+         LEFT JOIN pf_dossiers d ON d.id = c.dossier_id
+         WHERE c.credit_type = "CREDIT_LOMBARD"
+         ORDER BY FIELD(c.status, "ACTIVE", "PAUSED", "CLOSED"), c.id ASC'
+    )->fetchAll();
+
+    return array_map('account_tracker_credit_line_profile', $rows);
 }
 
 function account_tracker_credit_summary(PDO $pdo, ?string $snapshotDate = null): array
