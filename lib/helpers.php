@@ -191,8 +191,6 @@ function privacy_safe_return_path(?string $path): string
         'account_history.php',
         'credit_lines.php',
         'dossiers.php',
-        'earnings.php',
-        'earnings_event.php',
         'ai_report.php',
         'ai_report_view.php',
     ];

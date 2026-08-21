@@ -55,7 +55,7 @@ $totalSnapshots = count($history);
 $totalPages = max(1, (int) ceil($totalSnapshots / $pageSize));
 $currentPage = min($requestedPage, $totalPages);
 $offset = ($currentPage - 1) * $pageSize;
-$rows = array_reverse(array_slice(array_reverse($history), $offset, $pageSize));
+$rows = array_slice(array_reverse($history), $offset, $pageSize);
 $firstRow = $totalSnapshots === 0 ? 0 : $offset + 1;
 $lastRow = min($totalSnapshots, $offset + count($rows));
 

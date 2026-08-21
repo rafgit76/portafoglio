@@ -1,5 +1,9 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+
+set_flash('info', 'Il modulo Trimestrali e temporaneamente ritirato dall\'app in attesa di una riprogettazione. I dati esistenti non sono stati eliminati.');
+redirect('/ai_report.php');
+
 require_once __DIR__ . '/lib/earnings.php';
 
 $pdo = db();

@@ -2,6 +2,48 @@
 
 return [
     [
+        'version' => '2.3.1',
+        'date' => '2026-08-21',
+        'title' => 'Attesa e coerenza report patrimonio',
+        'changes' => [
+            'Aggiunta la finestra di avanzamento anche ai tre report Patrimonio, con protezione dal doppio invio durante la generazione.',
+            'Aggiunta l\'eliminazione protetta di un singolo report dall\'archivio AI, con conferma esplicita.',
+            'Allineati i delta patrimoniali alle cifre arrotondate mostrate nel report, evitando differenze di un centesimo.',
+            'Rafforzati prompt e controlli: i report patrimoniali non possono attribuire cause a variazioni viste soltanto negli snapshot.',
+            'Resa piu compatta e leggibile la tabella dei confronti nella stampa PDF.',
+        ],
+    ],
+    [
+        'version' => '2.3.0',
+        'date' => '2026-08-21',
+        'title' => 'Report AI patrimonio e ritiro Trimestrali',
+        'changes' => [
+            'Aggiunta nel Centro AI una sezione Patrimonio con report complessivo, confronto quotidiano e confronto settimanale del sabato.',
+            'I report patrimoniali usano solo snapshot conto disponibili e mantengono patrimonio, liquidita, saldi e credito esplicitamente separati.',
+            'Aggiunti badge dedicati nell\'archivio AI per distinguere i report del patrimonio da quelli del portafoglio.',
+            'Ritirato temporaneamente il modulo Trimestrali dalla navigazione: dati, migrazione ed eventi gia archiviati restano conservati per una futura riprogettazione.',
+        ],
+    ],
+    [
+        'version' => '2.2.3',
+        'date' => '2026-08-21',
+        'title' => 'Archivio patrimonio in ordine recente',
+        'changes' => [
+            'Corretto l\'ordinamento dell\'archivio patrimoniale: gli snapshot piu recenti sono ora mostrati per primi.',
+            'Mantenuto l\'ordine cronologico nei grafici per leggere correttamente l\'evoluzione nel tempo.',
+        ],
+    ],
+    [
+        'version' => '2.2.2',
+        'date' => '2026-08-21',
+        'title' => 'Correzione import multi-dossier',
+        'changes' => [
+            'Corretto il ricalcolo dei pesi dopo l\'import del portafoglio con modulo Conto attivo.',
+            'Eliminato il riuso di parametri SQL che Aruba PDO rifiutava con errore HY093 durante l\'import.',
+            'Mantenuta la transazione: in caso di errore non viene salvato uno snapshot parziale.',
+        ],
+    ],
+    [
         'version' => '2.2.1',
         'date' => '2026-08-20',
         'title' => 'Storico patrimonio e saldi',

@@ -192,11 +192,17 @@ function account_tracker_recalculate_snapshot(PDO $pdo, int $snapshotId): array
 
     $updateWeight = $pdo->prepare(
         'UPDATE pf_snapshot_positions
-         SET weight_pct = CASE WHEN :market_value > 0 THEN market_value / :market_value ELSE 0 END,
-             imported_weight_pct = CASE WHEN :market_value > 0 THEN market_value / :market_value ELSE 0 END
+         SET weight_pct = CASE WHEN :weight_threshold > 0 THEN market_value / :weight_divisor ELSE 0 END,
+             imported_weight_pct = CASE WHEN :imported_weight_threshold > 0 THEN market_value / :imported_weight_divisor ELSE 0 END
          WHERE snapshot_id = :snapshot_id'
     );
-    $updateWeight->execute([':market_value' => $marketValue, ':snapshot_id' => $snapshotId]);
+    $updateWeight->execute([
+        ':weight_threshold' => $marketValue,
+        ':weight_divisor' => $marketValue,
+        ':imported_weight_threshold' => $marketValue,
+        ':imported_weight_divisor' => $marketValue,
+        ':snapshot_id' => $snapshotId,
+    ]);
 
     return [
         'total_market_value' => $marketValue,

@@ -1630,11 +1630,37 @@ tbody tr.snapshot-row-min:hover {
     font-family: "JetBrains Mono", monospace;
 }
 
+.ai-account-change-list {
+    margin-top: auto;
+}
+
+.ai-account-change-list > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--line);
+}
+
+.ai-account-change-list > div span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.ai-account-change-list > div strong {
+    flex: 0 0 auto;
+    font-family: "JetBrains Mono", monospace;
+}
+
 .ai-generator-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
     margin-bottom: 1rem;
+}
+
+.ai-account-generator-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .ai-generator-panel {
@@ -1808,6 +1834,82 @@ tbody tr.snapshot-row-min:hover {
     color: #4d4b85;
     border-color: #c9c7e4;
     background: #f3f2fb;
+}
+
+.ai-archive-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    white-space: nowrap;
+}
+
+.ai-archive-delete {
+    position: relative;
+}
+
+.ai-archive-delete summary {
+    color: #c52d40;
+    cursor: pointer;
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+.ai-archive-delete summary::-webkit-details-marker {
+    display: none;
+}
+
+.ai-archive-delete form {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 0.45rem);
+    right: 0;
+    width: 235px;
+    padding: 0.75rem;
+    border: 1px solid #efb3bd;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 12px 28px rgba(45, 23, 27, 0.18);
+}
+
+.ai-archive-delete p {
+    margin: 0 0 0.65rem;
+    color: var(--muted);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    white-space: normal;
+}
+
+.ai-archive-delete .btn-danger {
+    min-height: 34px;
+    padding: 0.42rem 0.62rem;
+    border: 1px solid #d24053;
+    border-radius: 6px;
+    background: #fff2f4;
+    color: #b42335;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.ai-archive-delete .btn-danger:hover {
+    background: #ffe5e9;
+}
+
+.ai-type-account_general {
+    color: #0b5f78;
+    border-color: #9fd3e0;
+    background: #edf9fc;
+}
+
+.ai-type-account_changes {
+    color: #7a4a00;
+    border-color: #e6c88c;
+    background: #fff8e8;
+}
+
+.ai-type-account_weekly_changes {
+    color: #6b3a73;
+    border-color: #d8b3dc;
+    background: #fcf0fc;
 }
 
 .ai-open-link {
@@ -2500,12 +2602,21 @@ tbody tr.snapshot-row-min:hover {
 
     .ai-report-table {
         min-width: 0;
+        width: 100%;
+        table-layout: fixed;
         font-size: 9pt;
     }
 
     .ai-report-table th,
     .ai-report-table td {
-        padding: 0.35rem 0.45rem;
+        padding: 0.3rem 0.32rem;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .ai-report-table th:first-child,
+    .ai-report-table td:first-child {
+        width: 26%;
     }
 
     .ai-report-view-head {

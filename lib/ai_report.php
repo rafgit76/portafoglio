@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/account_tracker.php';
 
 function ai_report_cache_path(): string
 {
@@ -82,6 +83,20 @@ function ai_report_archive_load(string $id): ?array
     return is_array($decoded) ? $decoded : null;
 }
 
+function ai_report_archive_delete(string $id): void
+{
+    $path = ai_report_archive_path($id);
+    if ($path === null) {
+        throw new RuntimeException('Identificativo report non valido.');
+    }
+    if (!is_file($path)) {
+        throw new RuntimeException('Il report selezionato non e piu presente nell\'archivio.');
+    }
+    if (!unlink($path)) {
+        throw new RuntimeException('Impossibile eliminare il report dall\'archivio. Verifica i permessi della cartella storage/ai_reports.');
+    }
+}
+
 function ai_report_archive_list(): array
 {
     $directory = ai_report_archive_directory();
@@ -138,13 +153,24 @@ function ai_report_type_label(string $type, bool $compact = false): string
         'custom' => $compact ? 'Personalizzato' : 'Report personalizzato',
         'changes' => 'Cosa e cambiato?',
         'weekly_changes' => $compact ? 'Settimanale' : 'Cosa e cambiato settimanale?',
+        'account_general' => $compact ? 'Patrimonio completo' : 'Report complessivo del patrimonio',
+        'account_changes' => $compact ? 'Patrimonio quotidiano' : 'Cosa e cambiato nel patrimonio?',
+        'account_weekly_changes' => $compact ? 'Patrimonio settimanale' : 'Cosa e cambiato nel patrimonio settimanale?',
         default => $compact ? 'Complessivo' : 'Report complessivo',
     };
 }
 
 function ai_report_type_class(string $type): string
 {
-    return in_array($type, ['general', 'custom', 'changes', 'weekly_changes'], true) ? $type : 'general';
+    return in_array($type, [
+        'general',
+        'custom',
+        'changes',
+        'weekly_changes',
+        'account_general',
+        'account_changes',
+        'account_weekly_changes',
+    ], true) ? $type : 'general';
 }
 
 function ai_report_archive_generated(
@@ -698,6 +724,365 @@ function ai_report_generate_weekly_changes_with_gemini(array $historyPayload): a
     );
 }
 
+function ai_report_account_metric_definitions(): array
+{
+    return [
+        'fineco_total_assets' => 'Patrimonio totale Fineco',
+        'consolidated_portfolio_value' => 'Portafoglio consolidato',
+        'liquidity_total' => 'Liquidita propria',
+        'reconstructed_gross' => 'Patrimonio ricostruito',
+        'accounting_balance' => 'Saldo contabile',
+        'available_balance' => 'Saldo disponibile',
+        'credit_used_amount' => 'Fido utilizzato',
+        'credit_available_amount' => 'Credito disponibile',
+    ];
+}
+
+function ai_report_account_snapshot_rows(PDO $pdo): array
+{
+    if (!account_tracker_schema_ready($pdo)) {
+        throw new RuntimeException('Il modulo Conto non e inizializzato.');
+    }
+
+    $rows = $pdo->query(
+        'SELECT p.*, s.total_market_value AS consolidated_portfolio_value
+         FROM pf_patrimonial_snapshots p
+         LEFT JOIN pf_snapshots s ON s.snapshot_date = p.snapshot_date
+         ORDER BY p.snapshot_date ASC, p.id ASC'
+    )->fetchAll();
+
+    return array_map(static function (array $row): array {
+        $portfolioValue = $row['consolidated_portfolio_value'] !== null
+            ? (float) $row['consolidated_portfolio_value']
+            : null;
+        $liquidity = $row['liquidity_total'] !== null ? (float) $row['liquidity_total'] : null;
+        $creditUsed = $row['credit_used_amount'] !== null ? (float) $row['credit_used_amount'] : null;
+        $wealth = account_tracker_reconstructed_wealth($portfolioValue, $liquidity, $creditUsed);
+
+        return [
+            'id' => (int) $row['id'],
+            'snapshot_date' => (string) $row['snapshot_date'],
+            'fineco_total_assets' => $row['fineco_total_assets'] !== null ? (float) $row['fineco_total_assets'] : null,
+            'consolidated_portfolio_value' => $portfolioValue,
+            'liquidity_total' => $liquidity,
+            'reconstructed_gross' => $wealth['gross'],
+            'accounting_balance' => $row['accounting_balance'] !== null ? (float) $row['accounting_balance'] : null,
+            'available_balance' => $row['available_balance'] !== null ? (float) $row['available_balance'] : null,
+            'credit_used_amount' => $creditUsed,
+            'credit_available_amount' => $row['credit_available_amount'] !== null ? (float) $row['credit_available_amount'] : null,
+            'data_origin' => (string) ($row['data_origin'] ?? ''),
+        ];
+    }, $rows);
+}
+
+function ai_report_account_metric_summary(array $rows, string $field): array
+{
+    $available = array_values(array_filter($rows, static fn(array $row): bool => $row[$field] !== null));
+    $firstRow = $rows[0] ?? null;
+    $latestRow = $rows === [] ? null : $rows[count($rows) - 1];
+    $first = is_array($firstRow) && $firstRow[$field] !== null ? $firstRow : null;
+    $latest = is_array($latestRow) && $latestRow[$field] !== null ? $latestRow : null;
+    $min = null;
+    $max = null;
+
+    foreach ($available as $row) {
+        $value = (float) $row[$field];
+        if ($min === null || $value < $min['value']) {
+            $min = ['date' => (string) $row['snapshot_date'], 'value' => round($value, 2)];
+        }
+        if ($max === null || $value > $max['value']) {
+            $max = ['date' => (string) $row['snapshot_date'], 'value' => round($value, 2)];
+        }
+    }
+
+    $firstValue = $first === null ? null : round((float) $first[$field], 2);
+    $latestValue = $latest === null ? null : round((float) $latest[$field], 2);
+
+    return [
+        'first' => $firstValue,
+        'latest' => $latestValue,
+        'delta' => $firstValue !== null && $latestValue !== null ? round($latestValue - $firstValue, 2) : null,
+        'min' => $min,
+        'max' => $max,
+    ];
+}
+
+function ai_report_build_account_payload_from_rows(array $rows, string $comparisonKind = 'general'): array
+{
+    if (count($rows) < 2) {
+        throw new RuntimeException('Servono almeno 2 snapshot patrimoniali per generare un report AI.');
+    }
+
+    $definitions = ai_report_account_metric_definitions();
+    $metrics = [];
+    foreach ($definitions as $field => $label) {
+        $metrics[$field] = ai_report_account_metric_summary($rows, $field);
+    }
+
+    $hasComparableMetric = false;
+    foreach ($metrics as $metric) {
+        if ($metric['first'] !== null && $metric['latest'] !== null) {
+            $hasComparableMetric = true;
+            break;
+        }
+    }
+    if (!$hasComparableMetric) {
+        throw new RuntimeException('Gli snapshot patrimoniali non contengono ancora valori confrontabili.');
+    }
+
+    $first = $rows[0];
+    $latest = $rows[count($rows) - 1];
+    $payload = [
+        'domain' => 'patrimony',
+        'comparison_kind' => $comparisonKind,
+        'snapshots_count' => count($rows),
+        'date_range' => [
+            'from' => (string) $first['snapshot_date'],
+            'to' => (string) $latest['snapshot_date'],
+        ],
+        'metric_labels' => $definitions,
+        'metrics' => $metrics,
+        'series' => $rows,
+    ];
+
+    return [
+        'hash' => sha1(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+        'payload' => $payload,
+    ];
+}
+
+function ai_report_build_account_payload(PDO $pdo): array
+{
+    return ai_report_build_account_payload_from_rows(ai_report_account_snapshot_rows($pdo));
+}
+
+function ai_report_build_account_changes_payload(PDO $pdo): array
+{
+    $rows = ai_report_account_snapshot_rows($pdo);
+    if (count($rows) < 2) {
+        throw new RuntimeException('Servono almeno 2 snapshot patrimoniali per analizzare cosa e cambiato.');
+    }
+
+    return ai_report_build_account_payload_from_rows(array_slice($rows, -2), 'daily');
+}
+
+function ai_report_build_account_weekly_changes_payload(PDO $pdo, ?DateTimeImmutable $today = null): array
+{
+    $dateRange = ai_report_weekly_date_range($today);
+    $rowsByDate = [];
+    foreach (ai_report_account_snapshot_rows($pdo) as $row) {
+        $rowsByDate[(string) $row['snapshot_date']] = $row;
+    }
+
+    if (!isset($rowsByDate[$dateRange['to']])) {
+        throw new RuntimeException('Carica prima lo snapshot patrimoniale di oggi, sabato ' . ai_report_format_date_it($dateRange['to']) . '.');
+    }
+    if (!isset($rowsByDate[$dateRange['from']])) {
+        throw new RuntimeException('Manca lo snapshot patrimoniale del sabato precedente, ' . ai_report_format_date_it($dateRange['from']) . '.');
+    }
+
+    return ai_report_build_account_payload_from_rows([
+        $rowsByDate[$dateRange['from']],
+        $rowsByDate[$dateRange['to']],
+    ], 'weekly');
+}
+
+function ai_report_build_account_verified_facts(array $historyPayload): string
+{
+    $dateRange = is_array($historyPayload['date_range'] ?? null) ? $historyPayload['date_range'] : [];
+    $labels = is_array($historyPayload['metric_labels'] ?? null) ? $historyPayload['metric_labels'] : [];
+    $metrics = is_array($historyPayload['metrics'] ?? null) ? $historyPayload['metrics'] : [];
+    $comparisonKind = (string) ($historyPayload['comparison_kind'] ?? 'general');
+    $isComparison = in_array($comparisonKind, ['daily', 'weekly'], true);
+    $lines = [
+        'FATTI PATRIMONIALI VERIFICATI DAL CODICE PHP - COPIARE ESATTAMENTE LE CIFRE',
+        '- Snapshot analizzati: ' . (int) ($historyPayload['snapshots_count'] ?? 0),
+        '- Periodo: ' . ai_report_format_date_it((string) ($dateRange['from'] ?? ''))
+            . ' - ' . ai_report_format_date_it((string) ($dateRange['to'] ?? '')),
+    ];
+
+    if ($comparisonKind === 'weekly') {
+        $lines[] = '- Tipo di confronto: settimanale, da sabato a sabato.';
+        $lines[] = '- Intervallo di calendario: 7 giorni.';
+    }
+
+    foreach ($labels as $field => $label) {
+        $metric = is_array($metrics[$field] ?? null) ? $metrics[$field] : [];
+        if ($isComparison && (($metric['first'] ?? null) === null || ($metric['latest'] ?? null) === null)) {
+            continue;
+        }
+        if (($metric['first'] ?? null) !== null) {
+            $lines[] = '- ' . $label . ' iniziale: EUR ' . ai_report_format_number_it((float) $metric['first']);
+        }
+        if (($metric['latest'] ?? null) !== null) {
+            $lines[] = '- ' . $label . ' finale: EUR ' . ai_report_format_number_it((float) $metric['latest']);
+        }
+        if (($metric['delta'] ?? null) !== null) {
+            $lines[] = '- Delta ' . strtolower((string) $label) . ': EUR ' . ai_report_format_number_it((float) $metric['delta'], 2, true);
+        }
+        foreach ($isComparison ? [] : ['min' => 'Minimo', 'max' => 'Massimo'] as $key => $prefix) {
+            $extreme = is_array($metric[$key] ?? null) ? $metric[$key] : null;
+            if ($extreme !== null) {
+                $lines[] = '- ' . $prefix . ' ' . strtolower((string) $label) . ': EUR '
+                    . ai_report_format_number_it((float) ($extreme['value'] ?? 0))
+                    . ' il ' . ai_report_format_date_it((string) ($extreme['date'] ?? ''));
+            }
+        }
+    }
+
+    $lines[] = '';
+    $lines[] = 'SEMANTICA VINCOLANTE';
+    $lines[] = '- Patrimonio totale Fineco e il valore riportato dall\'export patrimoniale Fineco.';
+    $lines[] = '- Patrimonio ricostruito somma soltanto portafoglio consolidato e liquidita propria, quando entrambi disponibili.';
+    $lines[] = '- Fido utilizzato e credito disponibile restano separati dal patrimonio e non devono essere sommati al patrimonio.';
+    $lines[] = '- Saldo disponibile puo includere credito e non equivale automaticamente a patrimonio o liquidita propria.';
+
+    return implode("\n", $lines);
+}
+
+function ai_report_account_system_instruction(string $mode = 'general'): string
+{
+    $comparisonRule = $mode === 'weekly'
+        ? '- Confronta esclusivamente i due snapshot del sabato, distanti 7 giorni.'
+        : ($mode === 'daily'
+            ? '- Confronta esclusivamente i due snapshot patrimoniali forniti.'
+            : '- Descrivi esclusivamente l\'evoluzione degli snapshot patrimoniali forniti.');
+
+    return <<<PROMPT
+Sei un redattore di report descrittivi su patrimonio, liquidita, saldi e linee di credito. Non sei un consulente finanziario e non devi suggerire acquisti, vendite, prestiti o strategie personali.
+
+FONTI E NUMERI
+- Il blocco FATTI PATRIMONIALI VERIFICATI DAL CODICE PHP e l'unica fonte autorizzata per cifre, date, importi e variazioni.
+- Copia le cifre esattamente come fornite. Non sommare, sottrarre, arrotondare, ricostruire o correggere valori.
+- Il JSON serve soltanto come contesto strutturale. Non ricavare nuove cifre dal JSON.
+- Se un dato non compare nei fatti verificati, dichiaralo non disponibile oppure omettilo.
+
+SEMANTICA OBBLIGATORIA
+- Il credito disponibile e una linea di credito, non e patrimonio e non va mai sommato al patrimonio.
+- Il fido utilizzato e un debito o utilizzo di credito separato dal patrimonio; non attribuirlo automaticamente a una specifica linea di credito.
+- Il saldo disponibile puo includere credito, prenotazioni o altre componenti: non chiamarlo patrimonio o liquidita propria.
+- Il saldo contabile puo essere negativo.
+- Il patrimonio ricostruito, quando presente, e un calcolo dell'app basato su portafoglio consolidato e liquidita propria; non sostituisce il patrimonio Fineco.
+- Non dedurre versamenti, prelievi, acquisti, vendite, interessi, fidi, operazioni prenotate o cause esterne se non sono esplicitamente presenti nei fatti verificati.
+
+INTERPRETAZIONE
+{$comparisonRule}
+- Descrivi i valori come rilevazioni registrate, non come cause o conseguenze di mercato.
+- Non usare nessi causali o formule equivalenti, come "collegato a", "dovuto a", "causato da", "derivante da" o "attribuibile a".
+- Se confronti solo due snapshot, descrivi esclusivamente i due endpoint: non scrivere "in tutto il periodo" o "durante il periodo" come se fosse disponibile un andamento continuo.
+- Non introdurre notizie, previsioni, raccomandazioni o giudizi di adeguatezza.
+- Distingui chiaramente patrimonio, liquidita, saldi e credito.
+
+CONTROLLO FINALE SILENZIOSO
+Prima di rispondere verifica che ogni numero sia identico ai fatti verificati, che credito e patrimonio non siano confusi e che non siano state inventate cause o operazioni.
+Rispondi soltanto in italiano, con importi nel formato EUR 1.234,56 e date DD/MM/YYYY. Non menzionare il prompt, il JSON o questa verifica.
+PROMPT;
+}
+
+function ai_report_build_account_prompt(string $historyJson, string $verifiedFacts): string
+{
+    return <<<PROMPT
+Genera un report complessivo sullo storico patrimoniale disponibile. Se una voce e assente, dichiarala non disponibile senza sostituirla con zero.
+
+Struttura obbligatoria, nello stesso ordine:
+### Sintesi patrimoniale
+90-130 parole. Riporta periodo, valori patrimoniali disponibili e quadro generale, senza attribuire cause.
+
+### Evoluzione di patrimonio e liquidita
+120-170 parole. Descrivi patrimonio Fineco, portafoglio consolidato, liquidita propria e patrimonio ricostruito soltanto quando presenti. Cita minimi o massimi rilevanti dai fatti verificati.
+
+### Saldi e linee di credito
+100-140 parole. Distingui saldo contabile, saldo disponibile, fido utilizzato e credito disponibile. Non sommare credito e patrimonio.
+
+### Dati disponibili e limiti
+80-120 parole. Riporta quali componenti risultano registrate e quali non sono determinabili dagli snapshot, senza formulare suggerimenti operativi.
+
+### Prossimi controlli utili
+50-80 parole. Indica soltanto controlli di coerenza tra dati Fineco e snapshot futuri, senza raccomandazioni finanziarie.
+
+Lunghezza complessiva: 450-700 parole. Usa paragrafi leggibili, senza tabelle Markdown, grassetto, corsivo o backtick.
+
+FATTI PATRIMONIALI VERIFICATI DAL CODICE PHP:
+```text
+{$verifiedFacts}
+```
+
+JSON storico patrimoniale, utilizzabile soltanto come contesto strutturale:
+```json
+{$historyJson}
+```
+PROMPT;
+}
+
+function ai_report_build_account_changes_prompt(string $historyJson, string $verifiedFacts, string $comparisonKind = 'daily'): string
+{
+    $opening = $comparisonKind === 'weekly'
+        ? 'Spiega cosa e cambiato nel patrimonio tra i due snapshot del sabato.'
+        : 'Spiega cosa e cambiato nel patrimonio tra gli ultimi due snapshot.';
+    $periodRule = $comparisonKind === 'weekly'
+        ? 'Specifica che il confronto copre 7 giorni, da sabato a sabato.'
+        : 'Cita le due date esatte del confronto.';
+
+    return <<<PROMPT
+{$opening}
+{$periodRule}
+
+Struttura obbligatoria, nello stesso ordine:
+### In sintesi
+Massimo 60 parole. Descrivi il quadro senza attribuire cause.
+
+### Tabella patrimoniale
+Scrivi una sola frase introduttiva, poi una tabella Markdown con una riga per ciascuna voce presente nei FATTI VERIFICATI: Patrimonio totale Fineco, Portafoglio consolidato, Liquidita propria, Patrimonio ricostruito, Saldo contabile, Saldo disponibile, Fido utilizzato e Credito disponibile. Ometti soltanto le voci non disponibili in entrambi gli snapshot.
+| Voce | Snapshot precedente | Snapshot piu recente | Delta |
+|---|---:|---:|---:|
+
+### Lettura dei dati
+80-130 parole. Distingui esplicitamente patrimonio, liquidita, saldi e credito. Non dedurre cause, operazioni o movimenti non documentati.
+
+### Prossimo confronto
+Una sola frase neutra, senza raccomandazioni.
+
+Lunghezza complessiva: 120-240 parole. Privilegia la tabella e frasi brevi. Non usare grassetto, corsivo o backtick.
+
+FATTI PATRIMONIALI VERIFICATI DAL CODICE PHP:
+```text
+{$verifiedFacts}
+```
+
+JSON dei soli snapshot patrimoniali confrontati, utilizzabile soltanto come contesto strutturale:
+```json
+{$historyJson}
+```
+PROMPT;
+}
+
+function ai_report_generate_account_with_gemini(array $historyPayload): array
+{
+    $payloadJson = ai_report_encode_payload($historyPayload);
+    $verifiedFacts = ai_report_build_account_verified_facts($historyPayload);
+    return ai_report_generate_request(
+        ai_report_account_system_instruction(),
+        ai_report_build_account_prompt($payloadJson, $verifiedFacts),
+        'account_general',
+        $historyPayload,
+        $verifiedFacts
+    );
+}
+
+function ai_report_generate_account_changes_with_gemini(array $historyPayload, string $comparisonKind = 'daily'): array
+{
+    $payloadJson = ai_report_encode_payload($historyPayload);
+    $verifiedFacts = ai_report_build_account_verified_facts($historyPayload);
+    $type = $comparisonKind === 'weekly' ? 'account_weekly_changes' : 'account_changes';
+    return ai_report_generate_request(
+        ai_report_account_system_instruction($comparisonKind),
+        ai_report_build_account_changes_prompt($payloadJson, $verifiedFacts, $comparisonKind),
+        $type,
+        $historyPayload,
+        $verifiedFacts
+    );
+}
+
 function ai_report_encode_payload(array $historyPayload): string
 {
     $payloadJson = json_encode($historyPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -797,7 +1182,11 @@ function ai_report_generate_request(
 
 function ai_report_validate_response(string $text, string $finishReason, string $reportType, array $historyPayload): void
 {
-    if ($reportType === 'custom') {
+    if ($reportType === 'account_general') {
+        ai_report_validate_account_generated_text($text, $finishReason, $historyPayload);
+    } elseif (in_array($reportType, ['account_changes', 'account_weekly_changes'], true)) {
+        ai_report_validate_account_changes_text($text, $finishReason, $historyPayload);
+    } elseif ($reportType === 'custom') {
         ai_report_validate_custom_text($text, $finishReason);
     } elseif ($reportType === 'changes') {
         ai_report_validate_changes_text($text, $finishReason, $historyPayload);
@@ -805,9 +1194,11 @@ function ai_report_validate_response(string $text, string $finishReason, string 
         ai_report_validate_generated_text($text, $finishReason, $historyPayload);
     }
 
-    $verifiedFacts = $reportType === 'changes'
-        ? ai_report_build_changes_verified_facts($historyPayload)
-        : ai_report_build_verified_facts($historyPayload);
+    $verifiedFacts = match ($reportType) {
+        'changes' => ai_report_build_changes_verified_facts($historyPayload),
+        'account_general', 'account_changes', 'account_weekly_changes' => ai_report_build_account_verified_facts($historyPayload),
+        default => ai_report_build_verified_facts($historyPayload),
+    };
     ai_report_validate_numeric_tokens($text, $verifiedFacts);
 }
 
@@ -1274,6 +1665,8 @@ function ai_report_build_repair_prompt(
     $scope = match ($reportType) {
         'custom' => 'Riscrivi integralmente la risposta alla richiesta personalizzata.',
         'changes' => 'Riscrivi integralmente il confronto in forma compatta, con tabella dei totali e una mini-tabella per ogni strumento.',
+        'account_general' => 'Riscrivi integralmente il report patrimoniale con le cinque sezioni richieste. Mantienilo tra 450 e 700 parole.',
+        'account_changes', 'account_weekly_changes' => 'Riscrivi integralmente il confronto patrimoniale con le quattro sezioni richieste e una tabella patrimoniale. Mantienilo tra 120 e 240 parole.',
         default => 'Riscrivi integralmente il report con tutte le sette sezioni. Mantienilo tra 1050 e 1250 parole e non superare mai 1400 parole.',
     };
 
@@ -1283,7 +1676,7 @@ Motivo: {$validationError}
 
 {$scope}
 Restituisci soltanto la versione corretta e completa, senza commentare l'errore e senza premesse.
-Per il report complessivo usa un budget rigido: pianifica le sette sezioni, conta silenziosamente le parole prima di rispondere e comprimi ogni ripetizione fino a restare entro 1250 parole.
+Rispetta il budget di lunghezza e le intestazioni indicati dalla richiesta originale; pianifica silenziosamente la struttura prima di rispondere.
 Ogni numero deve essere copiato in cifre dal blocco verificato. Non eseguire alcun calcolo.
 Sono vietati numeri e date in lettere, inclusi i termini virgola, per cento e duemila.
 
@@ -1586,6 +1979,130 @@ function ai_report_validate_changes_text(string $text, string $finishReason, arr
             'Gemini non ha riportato correttamente uno o piu valori del confronto: '
             . implode(', ', array_slice($missingFacts, 0, 3))
         );
+    }
+}
+
+function ai_report_account_required_facts(array $historyPayload, bool $includeDelta): array
+{
+    $dateRange = is_array($historyPayload['date_range'] ?? null) ? $historyPayload['date_range'] : [];
+    $metrics = is_array($historyPayload['metrics'] ?? null) ? $historyPayload['metrics'] : [];
+    $required = [
+        ai_report_format_date_it((string) ($dateRange['from'] ?? '')),
+        ai_report_format_date_it((string) ($dateRange['to'] ?? '')),
+    ];
+
+    foreach (['fineco_total_assets', 'reconstructed_gross', 'liquidity_total', 'accounting_balance'] as $field) {
+        $metric = is_array($metrics[$field] ?? null) ? $metrics[$field] : [];
+        if (($metric['first'] ?? null) !== null && ($metric['latest'] ?? null) !== null) {
+            $required[] = 'EUR ' . ai_report_format_number_it((float) $metric['first']);
+            $required[] = 'EUR ' . ai_report_format_number_it((float) $metric['latest']);
+            if ($includeDelta && ($metric['delta'] ?? null) !== null) {
+                $required[] = 'EUR ' . ai_report_format_number_it((float) $metric['delta'], 2, true);
+            }
+            break;
+        }
+    }
+
+    return array_values(array_unique(array_filter($required, static fn(string $fact): bool => $fact !== '')));
+}
+
+function ai_report_validate_account_generated_text(string $text, string $finishReason, array $historyPayload): void
+{
+    if ($finishReason === 'MAX_TOKENS') {
+        throw new RuntimeException('Gemini ha raggiunto il limite di token: il report patrimoniale incompleto non e stato salvato.');
+    }
+
+    $requiredHeadings = [
+        '### Sintesi patrimoniale',
+        '### Evoluzione di patrimonio e liquidita',
+        '### Saldi e linee di credito',
+        '### Dati disponibili e limiti',
+        '### Prossimi controlli utili',
+    ];
+    $missingHeadings = array_values(array_filter(
+        $requiredHeadings,
+        static fn(string $heading): bool => !str_contains($text, $heading)
+    ));
+    if ($missingHeadings !== []) {
+        throw new RuntimeException('Gemini ha restituito un report patrimoniale incompleto: mancano una o piu sezioni richieste.');
+    }
+
+    $words = preg_split('/\s+/u', trim($text)) ?: [];
+    if (count($words) < 400) {
+        throw new RuntimeException('Gemini ha restituito un report patrimoniale troppo breve: il risultato non e stato salvato.');
+    }
+    if (count($words) > 850) {
+        throw new RuntimeException('Gemini ha restituito un report patrimoniale troppo lungo: deve restare entro 850 parole.');
+    }
+
+    ai_report_validate_numeric_style($text);
+    ai_report_validate_account_neutral_wording($text);
+    $missingFacts = array_values(array_filter(
+        ai_report_account_required_facts($historyPayload, true),
+        static fn(string $fact): bool => !str_contains($text, $fact)
+    ));
+    if ($missingFacts !== []) {
+        throw new RuntimeException('Gemini non ha riportato correttamente uno o piu valori patrimoniali verificati.');
+    }
+}
+
+function ai_report_validate_account_changes_text(string $text, string $finishReason, array $historyPayload): void
+{
+    if ($finishReason === 'MAX_TOKENS') {
+        throw new RuntimeException('Gemini ha raggiunto il limite di token: il confronto patrimoniale incompleto non e stato archiviato.');
+    }
+
+    $requiredHeadings = [
+        '### In sintesi',
+        '### Tabella patrimoniale',
+        '### Lettura dei dati',
+        '### Prossimo confronto',
+    ];
+    $missingHeadings = array_values(array_filter(
+        $requiredHeadings,
+        static fn(string $heading): bool => !str_contains($text, $heading)
+    ));
+    if ($missingHeadings !== []) {
+        throw new RuntimeException('Gemini ha restituito un confronto patrimoniale incompleto: mancano una o piu sezioni richieste.');
+    }
+
+    preg_match_all('/^\|\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?\s*$/m', $text, $tableSeparators);
+    if (count($tableSeparators[0] ?? []) < 1) {
+        throw new RuntimeException('Gemini non ha prodotto la tabella richiesta per il confronto patrimoniale.');
+    }
+
+    $words = preg_split('/\s+/u', trim($text)) ?: [];
+    if (count($words) < 100) {
+        throw new RuntimeException('Gemini ha restituito un confronto patrimoniale troppo breve: il risultato non e stato archiviato.');
+    }
+    if (count($words) > 350) {
+        throw new RuntimeException('Gemini ha restituito un confronto patrimoniale troppo lungo: il risultato non e stato archiviato.');
+    }
+
+    ai_report_validate_numeric_style($text);
+    ai_report_validate_account_neutral_wording($text);
+    $missingFacts = array_values(array_filter(
+        ai_report_account_required_facts($historyPayload, true),
+        static fn(string $fact): bool => !str_contains($text, $fact)
+    ));
+    if ($missingFacts !== []) {
+        throw new RuntimeException('Gemini non ha riportato correttamente uno o piu valori del confronto patrimoniale.');
+    }
+}
+
+function ai_report_validate_account_neutral_wording(string $text): void
+{
+    $unsupportedPatterns = [
+        '/\bcollegat[oaie]\s+(?:alla?|al|ai|alle|agli)\b/iu',
+        '/\b(?:dovut[oaie]|causat[oaie]|derivat[oaie]|attribuit[oaie])\s+(?:alla?|al|ai|alle|agli|da)\b/iu',
+        '/\bin tutto il periodo\b/iu',
+        '/\bdurante il periodo\b/iu',
+    ];
+
+    foreach ($unsupportedPatterns as $pattern) {
+        if (preg_match($pattern, $text) === 1) {
+            throw new RuntimeException('Gemini ha introdotto un nesso causale o temporale non supportato dagli snapshot patrimoniali disponibili.');
+        }
     }
 }
 

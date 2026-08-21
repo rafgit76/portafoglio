@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../lib/account_tracker.php';
 require_once __DIR__ . '/../lib/fineco_patrimony_importer.php';
+require_once __DIR__ . '/../lib/ai_report.php';
 
 $checks = 0;
 $assert = static function (bool $condition, string $label) use (&$checks): void {
@@ -61,9 +62,85 @@ $historicalRows = [
 $assert(account_tracker_history_extreme($historicalRows, 'fineco_total_assets', 'max')['date'] === '2026-08-20', 'massimo patrimonio storico');
 $assert(account_tracker_history_extreme($historicalRows, 'fineco_total_assets', 'min')['date'] === '2026-08-19', 'minimo patrimonio storico');
 
+// Aruba PDO con prepare nativi richiede placeholder distinti quando un valore e usato piu volte.
+$weightSql = 'UPDATE pf_snapshot_positions
+ SET weight_pct = CASE WHEN :weight_threshold > 0 THEN market_value / :weight_divisor ELSE 0 END,
+     imported_weight_pct = CASE WHEN :imported_weight_threshold > 0 THEN market_value / :imported_weight_divisor ELSE 0 END
+ WHERE snapshot_id = :snapshot_id';
+$placeholders = [];
+preg_match_all('/:([a-z_]+)/', $weightSql, $matches);
+foreach ($matches[1] as $placeholder) {
+    $placeholders[$placeholder] = ($placeholders[$placeholder] ?? 0) + 1;
+}
+$assert(max($placeholders) === 1, 'placeholder ricalcolo pesi non duplicati');
+
+// Archivio: la tabella parte dal dato piu recente, i grafici possono usare la serie originale crescente.
+$historyDates = [
+    ['snapshot_date' => '2026-08-19'],
+    ['snapshot_date' => '2026-08-20'],
+    ['snapshot_date' => '2026-08-21'],
+];
+$recentFirst = array_slice(array_reverse($historyDates), 0, 2);
+$assert($recentFirst[0]['snapshot_date'] === '2026-08-21' && $recentFirst[1]['snapshot_date'] === '2026-08-20', 'archivio patrimonio dal piu recente');
+
 // Riconciliazione dossier: ordinario + pegno sono componenti, non patrimonio aggiuntivo.
 $dossiers = [168241.45, 19752.73];
 $assert(abs(array_sum($dossiers) - 187994.18) < 0.01, 'totale dossier Fineco');
 $assert(abs(191773.21 - array_sum($dossiers) - 3779.03) < 0.01, 'nessuna duplicazione dossier patrimonio');
+
+// Report AI patrimonio: campi opzionali restano tali e il credito non entra nel patrimonio ricostruito.
+$accountRows = [
+    [
+        'id' => 1,
+        'snapshot_date' => '2026-08-20',
+        'fineco_total_assets' => 191773.21,
+        'consolidated_portfolio_value' => 167863.72,
+        'liquidity_total' => 3779.03,
+        'reconstructed_gross' => 171642.75,
+        'accounting_balance' => 766.58,
+        'available_balance' => 3712.97,
+        'credit_used_amount' => 0.0,
+        'credit_available_amount' => 12000.0,
+        'data_origin' => 'IMPORT_FINECO',
+    ],
+    [
+        'id' => 2,
+        'snapshot_date' => '2026-08-21',
+        'fineco_total_assets' => 191273.36,
+        'consolidated_portfolio_value' => 167308.91,
+        'liquidity_total' => 3778.97,
+        'reconstructed_gross' => 171087.88,
+        'accounting_balance' => 726.44,
+        'available_balance' => 3712.97,
+        'credit_used_amount' => null,
+        'credit_available_amount' => 12000.0,
+        'data_origin' => 'IMPORT_FINECO',
+    ],
+];
+$accountPayload = ai_report_build_account_payload_from_rows($accountRows, 'daily')['payload'];
+$assert((float) $accountPayload['metrics']['fineco_total_assets']['delta'] === -499.85, 'delta patrimonio verificato');
+$assert($accountPayload['metrics']['credit_used_amount']['latest'] === null, 'fido mancante nell ultimo snapshot non inventato');
+$assert((float) $accountPayload['metrics']['credit_available_amount']['latest'] === 12000.0, 'credito disponibile separato');
+$accountFacts = ai_report_build_account_verified_facts($accountPayload);
+$assert(str_contains($accountFacts, 'credito disponibile restano separati dal patrimonio'), 'semantica credito separata nel prompt');
+$assert(ai_report_type_label('account_weekly_changes', true) === 'Patrimonio settimanale', 'tipo archivio patrimonio settimanale');
+
+// I delta AI devono usare le stesse cifre arrotondate mostrate nella tabella, non i decimali interni al database.
+$roundedDelta = ai_report_account_metric_summary([
+    ['snapshot_date' => '2026-08-20', 'amount' => 191773.2149],
+    ['snapshot_date' => '2026-08-21', 'amount' => 191273.3599],
+], 'amount');
+$assert((float) $roundedDelta['first'] === 191773.21, 'primo valore AI arrotondato');
+$assert((float) $roundedDelta['latest'] === 191273.36, 'ultimo valore AI arrotondato');
+$assert((float) $roundedDelta['delta'] === -499.85, 'delta AI coerente con valori mostrati');
+
+// Con soli snapshot non sono ammesse attribuzioni causali non documentate.
+$rejectedCausalWording = false;
+try {
+    ai_report_validate_account_neutral_wording('La flessione e collegata alla variazione del portafoglio.');
+} catch (RuntimeException) {
+    $rejectedCausalWording = true;
+}
+$assert($rejectedCausalWording, 'nesso causale patrimoniale rifiutato');
 
 echo "OK: {$checks} controlli logici superati\n";

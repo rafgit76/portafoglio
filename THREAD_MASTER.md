@@ -5,7 +5,7 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `2.2.1`
+- `2.3.1`
 
 Obiettivo del thread:
 - mantenere memoria tecnica e operativa del progetto
@@ -48,7 +48,7 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - dettaglio snapshot
 - confronto tra snapshot
 - composizione, diversificazione e anagrafica strumenti
-- calendario e archivio delle trimestrali con impatto sugli snapshot
+- report AI separati per portafoglio e patrimonio opzionale
 - dati accessori live come EUR/USD e news
 
 ## Architettura applicativa
@@ -67,9 +67,7 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - `compare.php`: confronto snapshot e export CSV
 - `assets.php`: composizione per categoria, diversificazione territoriale e settoriale, concentrazione, fonti e anagrafica strumenti
 - `asset.php`: dettaglio storico del singolo titolo
-- `earnings.php`: calendario, titoli significativi e archivio trimestrali
-- `earnings_event.php`: dettaglio evento, impatto deterministico e report Gemini da fonte ufficiale
-- `ai_report.php`: Centro AI con confronti giornaliero e settimanale, generazione esplicita, report personalizzati e archivio
+- `ai_report.php`: Centro AI con report complessivi, confronti quotidiani e settimanali per portafoglio e patrimonio, generazione esplicita, report personalizzati e archivio
 - `ai_report_view.php`: dettaglio e stampa dei report AI archiviati
 - `changelog.php`: storico versioni applicative
 
@@ -85,7 +83,7 @@ La web app serve a importare direttamente gli export Fineco in formato `.xls` o 
 - `lib/xlsx_reader.php`: fallback XLSX custom senza Composer
 - `lib/fx.php`: recupero e cache EUR/USD da ECB
 - `lib/news.php`: recupero e ranking news con cache locale
-- `lib/earnings.php`: gestione eventi, calcolo impatto con semantica degli snapshot Fineco mattutini e generazione dei report trimestrali
+- `lib/earnings.php`: modulo Trimestrali conservato ma temporaneamente ritirato dalla UI in attesa di riprogettazione
 - `lib/diversification.php`: aggregazione dell’ultimo snapshot con classificazioni territoriali e settoriali
 
 ### View/layout
@@ -167,6 +165,29 @@ Il parser Patrimonio si basa sulle etichette reali dell'export Fineco: Patrimoni
 - `account_history.php` legge soltanto `pf_patrimonial_snapshots` e gli snapshot portafoglio della stessa data per il valore consolidato.
 - mostra massimi/minimi senza modificare alcun dato e separa i grafici di patrimonio da quelli dei saldi.
 - i campi null restano non disponibili: nessun requisito aggiuntivo viene imposto al flusso solo portafoglio.
+
+## Correzione import multi-dossier 2.2.2
+
+- Aruba PDO non accetta il riuso dello stesso placeholder nominato nella query di ricalcolo dei pesi.
+- i parametri sono ora distinti, cosi l'import del portafoglio ricalcola i pesi senza errore `HY093` e resta integralmente transazionale.
+
+## Archivio patrimonio 2.2.3
+
+- la tabella dello storico patrimoniale e ordinata dallo snapshot piu recente al piu vecchio, mentre i grafici restano in ordine cronologico.
+
+## Report AI patrimonio 2.3.0
+
+- il Centro AI offre report complessivo, confronto quotidiano e confronto settimanale del sabato anche per il patrimonio opzionale.
+- i payload usano esclusivamente gli snapshot patrimoniali e non sostituiscono valori mancanti con zero.
+- patrimonio Fineco, portafoglio consolidato, liquidita, saldi, fido utilizzato e credito disponibile restano semanticamente separati.
+- il modulo Trimestrali e ritirato dalla navigazione e le URL storiche reindirizzano al Centro AI; dati e migrazioni restano intatti.
+
+## Correzione report patrimonio 2.3.1
+
+- anche i form Patrimonio sono collegati alla finestra di avanzamento AI e ignorano invii ripetuti mentre una richiesta e in corso.
+- dall'archivio AI ogni singolo report puo essere eliminato dopo una conferma esplicita protetta da CSRF; snapshot e dati conto non vengono coinvolti.
+- i delta usati nei report sono calcolati sulle stesse cifre arrotondate mostrate al lettore, cosi ogni sottrazione coincide con la tabella.
+- prompt e validatori impediscono nessi causali e descrizioni temporali non supportate da due soli snapshot.
 
 ## Regola operativa ufficiale snapshot
 

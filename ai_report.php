@@ -32,12 +32,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $action = (string) ($_POST['action'] ?? '');
-        if (!in_array($action, ['generate_general', 'generate_custom', 'generate_changes', 'generate_weekly_changes'], true)) {
+        if (!in_array($action, [
+            'generate_general',
+            'generate_custom',
+            'generate_changes',
+            'generate_weekly_changes',
+            'generate_account_general',
+            'generate_account_changes',
+            'generate_account_weekly_changes',
+            'delete_report',
+        ], true)) {
             throw new RuntimeException('Azione AI non riconosciuta.');
         }
 
         if ((string) ($_POST['confirmed'] ?? '') !== '1') {
             throw new RuntimeException('Conferma la generazione prima di avviare la chiamata AI.');
+        }
+
+        if ($action === 'delete_report') {
+            $reportId = trim((string) ($_POST['report_id'] ?? ''));
+            ai_report_archive_delete($reportId);
+            set_flash('success', 'Report eliminato dall\'archivio AI.');
+            redirect('/ai_report.php');
         }
 
         if (!$apiConfigured) {
@@ -59,6 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $built = match ($action) {
             'generate_changes' => ai_report_build_changes_payload(db()),
             'generate_weekly_changes' => ai_report_build_weekly_changes_payload(db()),
+            'generate_account_general' => ai_report_build_account_payload(db()),
+            'generate_account_changes' => ai_report_build_account_changes_payload(db()),
+            'generate_account_weekly_changes' => ai_report_build_account_weekly_changes_payload(db()),
             default => ai_report_build_payload(db()),
         };
         if ($action === 'generate_custom') {
@@ -75,6 +94,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $record = ai_report_archive_generated($generated, $built, 'weekly_changes', $title);
             set_flash('success', 'Confronto settimanale generato e archiviato.');
+        } elseif ($action === 'generate_account_general') {
+            $generated = ai_report_generate_account_with_gemini($built['payload']);
+            $record = ai_report_archive_generated($generated, $built, 'account_general', 'Report complessivo del patrimonio');
+            set_flash('success', 'Report complessivo del patrimonio generato e archiviato.');
+        } elseif ($action === 'generate_account_weekly_changes') {
+            $generated = ai_report_generate_account_changes_with_gemini($built['payload'], 'weekly');
+            $dateTo = (string) ($built['payload']['date_range']['to'] ?? '');
+            $title = 'Cosa e cambiato nel patrimonio settimanale?';
+            if ($dateTo !== '') {
+                $title .= ' - ' . ai_report_format_date_it($dateTo);
+            }
+            $record = ai_report_archive_generated($generated, $built, 'account_weekly_changes', $title);
+            set_flash('success', 'Confronto patrimoniale settimanale generato e archiviato.');
+        } elseif ($action === 'generate_account_changes') {
+            $generated = ai_report_generate_account_changes_with_gemini($built['payload']);
+            $dateTo = (string) ($built['payload']['date_range']['to'] ?? '');
+            $title = 'Cosa e cambiato nel patrimonio?';
+            if ($dateTo !== '') {
+                $title .= ' - ' . ai_report_format_date_it($dateTo);
+            }
+            $record = ai_report_archive_generated($generated, $built, 'account_changes', $title);
+            set_flash('success', 'Confronto patrimoniale generato e archiviato.');
         } elseif ($action === 'generate_changes') {
             $generated = ai_report_generate_changes_with_gemini($built['payload']);
             $dateTo = (string) ($built['payload']['date_range']['to'] ?? '');
@@ -131,6 +172,14 @@ $weeklyChangesPromptTemplate = ai_report_build_changes_prompt(
     '[FATTI DEL CONFRONTO SETTIMANALE CALCOLATI E FORMATTATI AUTOMATICAMENTE DA PHP]',
     'weekly'
 );
+$accountPromptTemplate = ai_report_build_account_prompt(
+    '[DATI PATRIMONIALI INSERITI AUTOMATICAMENTE DALL\'APP]',
+    '[FATTI PATRIMONIALI VERIFICATI E FORMATTATI AUTOMATICAMENTE DA PHP]'
+);
+$accountChangesPromptTemplate = ai_report_build_account_changes_prompt(
+    '[DATI DEGLI ULTIMI DUE SNAPSHOT PATRIMONIALI INSERITI AUTOMATICAMENTE DALL\'APP]',
+    '[FATTI DEL CONFRONTO PATRIMONIALE CALCOLATI E FORMATTATI AUTOMATICAMENTE DA PHP]'
+);
 $changesBuilt = null;
 $changesUnavailable = null;
 try {
@@ -160,8 +209,59 @@ $weeklyChangesDateRange = is_array($weeklyChangesPayload['date_range'] ?? null) 
 $weeklyChangesPositions = is_array($weeklyChangesPayload['first_to_latest_position_changes'] ?? null)
     ? array_slice($weeklyChangesPayload['first_to_latest_position_changes'], 0, 3)
     : [];
+$accountTrackerReady = account_tracker_schema_ready(db());
+$accountGeneralBuilt = null;
+$accountGeneralUnavailable = null;
+$accountChangesBuilt = null;
+$accountChangesUnavailable = null;
+$accountWeeklyBuilt = null;
+$accountWeeklyUnavailable = null;
+if ($accountTrackerReady) {
+    try {
+        $accountGeneralBuilt = ai_report_build_account_payload(db());
+    } catch (Throwable $e) {
+        $accountGeneralUnavailable = $e->getMessage();
+    }
+    try {
+        $accountChangesBuilt = ai_report_build_account_changes_payload(db());
+    } catch (Throwable $e) {
+        $accountChangesUnavailable = $e->getMessage();
+    }
+    try {
+        $accountWeeklyBuilt = ai_report_build_account_weekly_changes_payload(db());
+    } catch (Throwable $e) {
+        $accountWeeklyUnavailable = $e->getMessage();
+    }
+} else {
+    $accountGeneralUnavailable = 'Il modulo Conto non e inizializzato.';
+    $accountChangesUnavailable = $accountGeneralUnavailable;
+    $accountWeeklyUnavailable = $accountGeneralUnavailable;
+}
+$accountGeneralPayload = is_array($accountGeneralBuilt['payload'] ?? null) ? $accountGeneralBuilt['payload'] : [];
+$accountChangesPayload = is_array($accountChangesBuilt['payload'] ?? null) ? $accountChangesBuilt['payload'] : [];
+$accountWeeklyPayload = is_array($accountWeeklyBuilt['payload'] ?? null) ? $accountWeeklyBuilt['payload'] : [];
+$accountMetricLabels = is_array($accountGeneralPayload['metric_labels'] ?? null)
+    ? $accountGeneralPayload['metric_labels']
+    : ai_report_account_metric_definitions();
+$accountChangesRange = is_array($accountChangesPayload['metrics'] ?? null) ? $accountChangesPayload['metrics'] : [];
+$accountWeeklyRange = is_array($accountWeeklyPayload['metrics'] ?? null) ? $accountWeeklyPayload['metrics'] : [];
+$accountChangesDateRange = is_array($accountChangesPayload['date_range'] ?? null) ? $accountChangesPayload['date_range'] : [];
+$accountWeeklyDateRange = is_array($accountWeeklyPayload['date_range'] ?? null) ? $accountWeeklyPayload['date_range'] : [];
+$accountChangesPreviewFields = array_keys(array_filter(
+    $accountMetricLabels,
+    static fn(string $field): bool => ($accountChangesRange[$field]['delta'] ?? null) !== null,
+    ARRAY_FILTER_USE_KEY
+));
+$accountWeeklyPreviewFields = array_keys(array_filter(
+    $accountMetricLabels,
+    static fn(string $field): bool => ($accountWeeklyRange[$field]['delta'] ?? null) !== null,
+    ARRAY_FILTER_USE_KEY
+));
 $formatSignedMoney = static function (float $value): string {
     return 'EUR ' . ai_report_format_number_it($value, 2, true);
+};
+$formatAccountMoney = static function (?float $value, bool $signed = false): string {
+    return $value === null ? 'Dato non disponibile' : 'EUR ' . ai_report_format_number_it($value, 2, $signed);
 };
 
 include __DIR__ . '/partials/header.php';
@@ -418,6 +518,152 @@ include __DIR__ . '/partials/header.php';
     </article>
 </section>
 
+<section class="panel ai-changes-panel" id="ai-account-reports">
+    <div class="panel-head">
+        <div>
+            <span class="ai-generator-kicker">Dati opzionali del conto</span>
+            <h2>Report AI patrimonio</h2>
+            <p>Analisi separate di patrimonio, liquidita, saldi e credito. Il credito disponibile non viene mai considerato patrimonio.</p>
+        </div>
+        <span class="ai-status <?= $accountGeneralBuilt !== null ? 'ai-status-ready' : 'ai-status-scheduled' ?>">
+            <?= $accountGeneralBuilt !== null ? 'Storico disponibile' : 'In attesa di dati' ?>
+        </span>
+    </div>
+
+    <?php if ($accountGeneralBuilt === null): ?>
+        <div class="ai-empty-state">
+            <strong>Report patrimoniale non disponibile</strong>
+            <p><?= e($accountGeneralUnavailable ?? 'Servono almeno due snapshot patrimoniali con valori confrontabili.') ?></p>
+        </div>
+    <?php else: ?>
+        <div class="ai-change-metrics" aria-label="Riepilogo ultimo snapshot patrimoniale">
+            <?php foreach (['fineco_total_assets', 'liquidity_total', 'accounting_balance', 'available_balance'] as $field): ?>
+                <?php
+                $metric = is_array($accountGeneralPayload['metrics'][$field] ?? null)
+                    ? $accountGeneralPayload['metrics'][$field]
+                    : [];
+                $value = $metric['latest'] ?? null;
+                ?>
+                <div>
+                    <span><?= e((string) ($accountMetricLabels[$field] ?? $field)) ?></span>
+                    <strong class="<?= $value !== null && (float) $value < 0 ? 'neg' : '' ?>"><?= e($formatAccountMoney($value !== null ? (float) $value : null)) ?></strong>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <p class="tiny-note">Sono mostrate solo rilevazioni effettivamente archiviate. Le voci mancanti restano non disponibili e non vengono sostituite con zero.</p>
+    <?php endif; ?>
+</section>
+
+<section class="ai-generator-grid ai-account-generator-grid">
+    <article class="panel ai-generator-panel">
+        <div>
+            <span class="ai-generator-kicker">Analisi standard</span>
+            <h2>Report complessivo patrimonio</h2>
+            <p>Riepiloga lo storico disponibile mantenendo patrimonio, liquidita, saldi e credito separati.</p>
+        </div>
+        <?php if ($accountGeneralBuilt === null): ?>
+            <p class="tiny-note"><?= e($accountGeneralUnavailable ?? 'Servono almeno due snapshot patrimoniali.') ?></p>
+        <?php else: ?>
+            <form method="post" id="account-general-report-form">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="generate_account_general">
+                <details class="ai-inline-confirm">
+                    <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Genera report patrimonio</summary>
+                    <div class="ai-inline-confirm-body">
+                        <strong>Conferma generazione</strong>
+                        <p>Gemini ricevera soltanto gli snapshot patrimoniali e i valori verificati da PHP. Il report verra archiviato separatamente per tipo.</p>
+                        <button type="submit" name="confirmed" value="1" <?= !$apiConfigured ? 'disabled' : '' ?>>Conferma e genera</button>
+                    </div>
+                </details>
+            </form>
+        <?php endif; ?>
+    </article>
+
+    <article class="panel ai-generator-panel">
+        <div>
+            <span class="ai-generator-kicker">Ultimo aggiornamento</span>
+            <h2>Cosa e cambiato nel patrimonio?</h2>
+            <?php if ($accountChangesBuilt !== null): ?>
+                <p>Confronta lo snapshot del <?= e(ai_report_format_date_it((string) ($accountChangesDateRange['to'] ?? ''))) ?> con quello del <?= e(ai_report_format_date_it((string) ($accountChangesDateRange['from'] ?? ''))) ?>.</p>
+            <?php else: ?>
+                <p>Confronta automaticamente gli ultimi due snapshot patrimoniali disponibili.</p>
+            <?php endif; ?>
+        </div>
+        <?php if ($accountChangesBuilt === null): ?>
+            <p class="tiny-note"><?= e($accountChangesUnavailable ?? 'Servono almeno due snapshot patrimoniali.') ?></p>
+        <?php else: ?>
+            <div class="ai-change-list ai-account-change-list">
+                <?php foreach ($accountChangesPreviewFields as $field): ?>
+                    <?php
+                    $metric = is_array($accountChangesRange[$field] ?? null) ? $accountChangesRange[$field] : [];
+                    $delta = $metric['delta'] ?? null;
+                    ?>
+                    <?php if ($delta !== null): ?>
+                        <div>
+                            <span><?= e((string) ($accountMetricLabels[$field] ?? $field)) ?></span>
+                            <strong class="<?= (float) $delta >= 0 ? 'pos' : 'neg' ?>"><?= e($formatAccountMoney((float) $delta, true)) ?></strong>
+                        </div>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+            <form method="post" id="account-changes-report-form">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="generate_account_changes">
+                <details class="ai-inline-confirm">
+                    <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Spiegami cosa e cambiato</summary>
+                    <div class="ai-inline-confirm-body">
+                        <strong>Conferma analisi patrimoniale</strong>
+                        <p>Gemini ricevera soltanto gli ultimi due snapshot patrimoniali e i delta verificati da PHP.</p>
+                        <button type="submit" name="confirmed" value="1" <?= !$apiConfigured ? 'disabled' : '' ?>>Conferma e analizza</button>
+                    </div>
+                </details>
+            </form>
+        <?php endif; ?>
+    </article>
+
+    <article class="panel ai-generator-panel">
+        <div>
+            <span class="ai-generator-kicker">Riepilogo del sabato</span>
+            <h2>Cosa e cambiato nel patrimonio settimanale?</h2>
+            <?php if ($accountWeeklyBuilt !== null): ?>
+                <p>Confronta il sabato <?= e(ai_report_format_date_it((string) ($accountWeeklyDateRange['to'] ?? ''))) ?> con il sabato <?= e(ai_report_format_date_it((string) ($accountWeeklyDateRange['from'] ?? ''))) ?>.</p>
+            <?php else: ?>
+                <p>Disponibile soltanto il sabato, con i due snapshot patrimoniali distanti 7 giorni.</p>
+            <?php endif; ?>
+        </div>
+        <?php if ($accountWeeklyBuilt === null): ?>
+            <p class="tiny-note"><?= e($accountWeeklyUnavailable ?? 'La funzione si attiva soltanto il sabato.') ?></p>
+        <?php else: ?>
+            <div class="ai-change-list ai-account-change-list">
+                <?php foreach ($accountWeeklyPreviewFields as $field): ?>
+                    <?php
+                    $metric = is_array($accountWeeklyRange[$field] ?? null) ? $accountWeeklyRange[$field] : [];
+                    $delta = $metric['delta'] ?? null;
+                    ?>
+                    <?php if ($delta !== null): ?>
+                        <div>
+                            <span><?= e((string) ($accountMetricLabels[$field] ?? $field)) ?></span>
+                            <strong class="<?= (float) $delta >= 0 ? 'pos' : 'neg' ?>"><?= e($formatAccountMoney((float) $delta, true)) ?></strong>
+                        </div>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+            <form method="post" id="account-weekly-changes-report-form">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="generate_account_weekly_changes">
+                <details class="ai-inline-confirm">
+                    <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Spiegami la settimana</summary>
+                    <div class="ai-inline-confirm-body">
+                        <strong>Conferma analisi patrimoniale settimanale</strong>
+                        <p>Gemini ricevera soltanto i due snapshot patrimoniali del sabato e i delta verificati da PHP.</p>
+                        <button type="submit" name="confirmed" value="1" <?= !$apiConfigured ? 'disabled' : '' ?>>Conferma e analizza</button>
+                    </div>
+                </details>
+            </form>
+        <?php endif; ?>
+    </article>
+</section>
+
 <section class="panel">
     <div class="panel-head">
         <div>
@@ -445,7 +691,7 @@ include __DIR__ . '/partials/header.php';
                     <th>Periodo</th>
                     <th>Token</th>
                     <th>Costo stimato</th>
-                    <th></th>
+                    <th>Azioni</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -475,7 +721,21 @@ include __DIR__ . '/partials/header.php';
                         <td><?= e($period !== '' ? $period : '-') ?></td>
                         <td class="mono-cell"><?= number_format((int) ($usage['total_tokens'] ?? 0), 0, ',', '.') ?></td>
                         <td class="mono-cell">$ <?= number_format((float) ($report['estimated_cost_usd'] ?? 0), 5, ',', '.') ?></td>
-                        <td><a class="ai-open-link" href="<?= e(app_base_path()) ?>/ai_report_view.php?id=<?= e(rawurlencode((string) $report['id'])) ?>">Apri</a></td>
+                        <td>
+                            <div class="ai-archive-actions">
+                                <a class="ai-open-link" href="<?= e(app_base_path()) ?>/ai_report_view.php?id=<?= e(rawurlencode((string) $report['id'])) ?>">Apri</a>
+                                <details class="ai-archive-delete">
+                                    <summary>Elimina</summary>
+                                    <form method="post">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="action" value="delete_report">
+                                        <input type="hidden" name="report_id" value="<?= e((string) $report['id']) ?>">
+                                        <p>Eliminare solo questo report archiviato?</p>
+                                        <button type="submit" name="confirmed" value="1" class="btn-danger">Conferma elimina</button>
+                                    </form>
+                                </details>
+                            </div>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -522,6 +782,21 @@ include __DIR__ . '/partials/header.php';
         <div class="ai-prompt-block">
             <h3>Struttura del confronto settimanale</h3>
             <pre><?= e($weeklyChangesPromptTemplate) ?></pre>
+        </div>
+    </details>
+    <details class="ai-prompt-details">
+        <summary>Mostra il prompt Report AI patrimonio</summary>
+        <div class="ai-prompt-block">
+            <h3>System instruction patrimonio</h3>
+            <pre><?= e(ai_report_account_system_instruction()) ?></pre>
+        </div>
+        <div class="ai-prompt-block">
+            <h3>Struttura del report patrimonio</h3>
+            <pre><?= e($accountPromptTemplate) ?></pre>
+        </div>
+        <div class="ai-prompt-block">
+            <h3>Struttura del confronto patrimonio</h3>
+            <pre><?= e($accountChangesPromptTemplate) ?></pre>
         </div>
     </details>
 </section>

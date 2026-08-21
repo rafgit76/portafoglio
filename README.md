@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.2.1`
+Versione corrente: `2.3.1`
 
 ## Deploy (FTP)
 
@@ -65,9 +65,7 @@ In `config/config.local.php` puoi regolare:
 - `snapshot.php?id=...`: dettaglio snapshot
 - `assets.php`: composizione, diversificazione, fonti e anagrafica strumenti
 - `asset.php?id=...`: dettaglio storico di un singolo titolo
-- `earnings.php`: calendario, titoli significativi e archivio delle trimestrali
-- `earnings_event.php?id=...`: dettaglio evento, impatto sugli snapshot e report Gemini
-- `ai_report.php`: Centro AI, confronti giornaliero e settimanale, generazione esplicita e archivio report
+- `ai_report.php`: Centro AI, report e confronti distinti per portafoglio e patrimonio, generazione esplicita e archivio report
 - `ai_report_view.php`: dettaglio e stampa di un report AI archiviato
 - `changelog.php`: storico versioni applicative
 
@@ -98,7 +96,7 @@ Per il trasferimento BTP del `20/08/2026`, non modificare lo storico automaticam
 
 ## Report AI
 
-La pagina `Report AI` e un centro operativo che usa Gemini lato server per generare report sullo storico degli snapshot. La funzione `Cosa e cambiato?` confronta soltanto gli ultimi due snapshot. Il confronto settimanale e disponibile esclusivamente il sabato e usa le rilevazioni con data esatta del sabato corrente e del sabato precedente, distanti sette giorni. Le anteprime sono calcolate gratuitamente da PHP, mentre la spiegazione AI parte solo dopo conferma. La semplice apertura della pagina non esegue chiamate API: ogni generazione richiede un'azione e una conferma esplicite. Durante l'elaborazione viene mostrato un overlay con avanzamento stimato, stato finale ed eventuali errori.
+La pagina `Report AI` e un centro operativo che usa Gemini lato server per generare report sullo storico degli snapshot. Per il portafoglio sono disponibili report complessivo, confronto quotidiano e confronto settimanale del sabato. La sezione Patrimonio e opzionale e offre le stesse tre modalita usando soltanto gli snapshot patrimoniali disponibili: mantiene separati patrimonio Fineco, portafoglio consolidato, liquidita, saldi e credito. Il confronto settimanale e disponibile esclusivamente il sabato e usa le rilevazioni con data esatta del sabato corrente e del sabato precedente, distanti sette giorni. Le anteprime sono calcolate gratuitamente da PHP, mentre la spiegazione AI parte solo dopo conferma. La semplice apertura della pagina non esegue chiamate API: ogni generazione richiede un'azione e una conferma esplicite. Durante l'elaborazione viene mostrato un overlay con avanzamento stimato, stato finale ed eventuali errori.
 Configura la chiave solo in `config/config.local.php` o tramite `PORTFOLIO_GEMINI_API_KEY`.
 Il modello predefinito e' `gemini-3.7-flash`, configurabile con `PORTFOLIO_GEMINI_MODEL`. Il listino introduttivo usato per la stima e' $0,75 per milione di token input e $3,75 per milione di token output o ragionamento fino al 31 dicembre 2026.
 Il livello di ragionamento predefinito e' `medium`, configurabile con `PORTFOLIO_GEMINI_THINKING_LEVEL`.
@@ -110,11 +108,7 @@ I report vengono salvati come JSON protetti in `storage/ai_reports`, esclusi da 
 
 ## Trimestrali
 
-Il modulo `Trimestrali` collega gli eventi societari ai titoli di tipo `AZIONE`. Le date vengono inserite come confermate o stimate e la fonte ufficiale puo essere aggiunta quando il comunicato e disponibile. Il report Gemini parte solo dopo conferma, usa URL Context e viene archiviato soltanto se la fonte risulta recuperata.
-
-L'impatto e calcolato da PHP confrontando gli snapshot utili prima e dopo l'annuncio. Poiche gli snapshot Fineco importati al mattino riportano la chiusura della sera precedente, per una pubblicazione dopo la chiusura il primo snapshot successivo resta il riferimento pre-evento e quello seguente misura la prima seduta completa di reazione. Per limitare l'effetto di acquisti o vendite nella finestra, la variazione del valore unitario in EUR viene applicata alla quantita precedente. Il risultato comprende comunque l'effetto del cambio incorporato nei controvalori Fineco e non costituisce una misura causale perfetta.
-
-Su un database gia esistente importa una sola volta `sql/migration_1_9_0_earnings.sql`. Le nuove installazioni possono continuare a usare `sql/schema.sql`.
+Il modulo Trimestrali e temporaneamente ritirato dalla navigazione in attesa di una riprogettazione. Le tabelle, la migrazione SQL e gli eventi gia archiviati non vengono eliminati; le vecchie URL reindirizzano al Centro AI.
 
 ## Strumenti e diversificazione
 
