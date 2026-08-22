@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/lib/account_tracker.php';
+require_once __DIR__ . '/lib/credit_lombard_control.php';
 
 $pageTitle = 'Gestione fidi';
 $pdo = db();
@@ -13,12 +14,68 @@ if (!account_tracker_schema_ready($pdo)) {
 }
 
 $profileSchemaReady = account_tracker_credit_profile_schema_ready($pdo);
+$controlSchemaReady = credit_lombard_control_schema_ready($pdo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $token = $_POST['csrf_token'] ?? null;
         if (!is_valid_csrf_token(is_string($token) ? $token : null)) {
             throw new RuntimeException('Richiesta non valida (token).');
+        }
+
+        $action = (string) ($_POST['action'] ?? 'save_credit_line');
+        if ($action === 'check_credit_lombard') {
+            if (!$profileSchemaReady || !$controlSchemaReady) {
+                throw new RuntimeException('Importa prima la migrazione SQL 2.7.0 per attivare il controllo Credit Lombard.');
+            }
+            $creditLineId = (int) ($_POST['credit_line_id'] ?? 0);
+            $lineStatement = $pdo->prepare('SELECT * FROM pf_credit_lines WHERE id = :id AND credit_type = "CREDIT_LOMBARD" LIMIT 1');
+            $lineStatement->execute([':id' => $creditLineId]);
+            $creditLine = $lineStatement->fetch();
+            if (!is_array($creditLine)) {
+                throw new RuntimeException('Rapporto Credit Lombard non trovato.');
+            }
+            $profile = account_tracker_credit_line_profile($creditLine);
+            $expectedDossierIdentifier = (string) ($profile['pledge_dossier_id'] ?? '');
+
+            $file = $_FILES['lombard_patrimony_file'] ?? null;
+            if (!is_array($file) || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                throw new RuntimeException('Seleziona l export patrimonio del rapporto Credit Lombard.');
+            }
+            $originalName = (string) ($file['name'] ?? '');
+            $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            if (!in_array($extension, ['xls', 'xlsx'], true)) {
+                throw new RuntimeException('Il controllo accetta soltanto file Fineco .xls o .xlsx.');
+            }
+            $temporaryPath = $file['tmp_name'] ?? null;
+            if (!is_string($temporaryPath) || !is_uploaded_file($temporaryPath)) {
+                throw new RuntimeException('Upload di controllo non valido.');
+            }
+            $fileSize = (int) ($file['size'] ?? 0);
+            if ($fileSize <= 0 || $fileSize > app_upload_max_bytes()) {
+                throw new RuntimeException('File di controllo troppo grande o vuoto.');
+            }
+            if (uploaded_spreadsheet_type($temporaryPath, $originalName) === null) {
+                throw new RuntimeException('Il file non sembra un export Excel Fineco valido.');
+            }
+
+            $parsed = (new FinecoPatrimonyParser())->parse($temporaryPath);
+            $control = credit_lombard_control_extract(
+                $parsed,
+                $expectedDossierIdentifier,
+                credit_lombard_control_date_from_filename($originalName)
+            );
+            $expected = credit_lombard_control_expected_portfolio($pdo, $creditLine, (string) $control['check_date']);
+            $result = credit_lombard_control_compare($control, $expected);
+            credit_lombard_control_save($pdo, $creditLineId, $originalName, $parsed, $result);
+
+            $message = match ($result['check_status']) {
+                'COHERENT' => 'Controllo Credit Lombard completato: il dossier a pegno coincide al centesimo con valore di mercato e rateo importati.',
+                'DIFFERENCE' => 'Controllo Credit Lombard completato: rilevata una differenza di EUR ' . number_format((float) $result['difference_amount'], 2, ',', '.') . '.',
+                default => 'Controllo Credit Lombard archiviato. Non esiste un portafoglio Lombard della stessa data con cui confrontarlo.',
+            };
+            set_flash($result['check_status'] === 'DIFFERENCE' ? 'error' : 'success', $message . ' Nessuno snapshot e stato modificato.');
+            redirect('/credit_lines.php#lombard-control');
         }
 
         $name = trim((string) ($_POST['name'] ?? ''));
@@ -134,6 +191,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $dossiers = account_tracker_dossiers($pdo);
 $lines = $pdo->query('SELECT c.*, d.name AS dossier_name, c.agreed_amount - c.used_amount AS available_amount FROM pf_credit_lines c LEFT JOIN pf_dossiers d ON d.id=c.dossier_id ORDER BY FIELD(c.status,"ACTIVE","PAUSED","CLOSED"), c.name')->fetchAll();
+$creditLombardLines = array_values(array_filter($lines, static fn(array $line): bool => ($line['credit_type'] ?? '') === 'CREDIT_LOMBARD'));
+$controlHistory = [];
+if ($controlSchemaReady) {
+    foreach ($creditLombardLines as $creditLombardLine) {
+        foreach (credit_lombard_control_history($pdo, (int) $creditLombardLine['id']) as $check) {
+            $check['credit_line_name'] = (string) $creditLombardLine['name'];
+            $controlHistory[] = $check;
+        }
+    }
+    usort($controlHistory, static fn(array $a, array $b): int => [$b['check_date'], $b['id']] <=> [$a['check_date'], $a['id']]);
+    $controlHistory = array_slice($controlHistory, 0, 12);
+}
 $editId = (int) ($_GET['edit'] ?? 0);
 $editing = null;
 foreach ($lines as $line) { if ((int) $line['id'] === $editId) { $editing = $line; break; } }
@@ -163,4 +232,35 @@ include __DIR__ . '/partials/header.php';
 <label class="checkbox-label"><input type="checkbox" name="allow_over_agreement" value="1"> Confermo un utilizzato superiore all'accordato</label>
 <label class="form-full">Note<textarea name="notes" rows="3"><?= $value('notes') ?></textarea></label><div class="form-full"><button type="submit">Salva linea di credito</button></div></form></section>
 <section class="panel"><h2>Linee registrate</h2><?php if (!$lines): ?><p>Nessuna linea di credito configurata.</p><?php else: ?><table><thead><tr><th>Nome</th><th>Tipo</th><th>Accordato</th><th>Utilizzato</th><th>Disponibile</th><th>Stato</th><th></th></tr></thead><tbody><?php foreach ($lines as $line): $lineProfile = account_tracker_credit_line_profile($line); ?><tr><td><strong><?= e((string) $line['name']) ?></strong><br><span class="tiny-note"><?= e((string) ($line['dossier_name'] ?? '')) ?><?= $profileSchemaReady ? ' - ' . e($lineProfile['data_origin_label']) : '' ?></span></td><td><?= e($lineProfile['credit_line_type']) ?></td><td>EUR <?= number_format((float) $line['agreed_amount'],2,',','.') ?></td><td class="<?= (float) $line['used_amount'] > 0 ? 'neg' : '' ?>">EUR <?= number_format((float) $line['used_amount'],2,',','.') ?></td><td>EUR <?= number_format((float) $line['available_amount'],2,',','.') ?></td><td><?= e($lineProfile['status']) ?></td><td><a class="btn-link" href="<?= e(app_base_path()) ?>/credit_lines.php?edit=<?= (int) $line['id'] ?>">Modifica</a></td></tr><?php endforeach; ?></tbody></table><?php endif; ?></section>
+<?php if ($creditLombardLines): ?>
+<section class="panel" id="lombard-control">
+    <div class="panel-head">
+        <div><p class="eyebrow">VERIFICA FACOLTATIVA</p><h2>Controllo rapporto Credit Lombard</h2><p>Carica l'export Patrimonio del solo rapporto Lombard. Il file viene confrontato con il portafoglio Lombard della stessa data senza modificare alcun dato.</p></div>
+    </div>
+    <?php if (!$controlSchemaReady): ?>
+        <div class="warning-note"><strong>Controllo da aggiornare.</strong> Dopo un backup del database, importa una volta <code>sql/migration_2_7_1_lombard_accrued_interest.sql</code>.</div>
+    <?php else: ?>
+        <div class="lombard-control-grid">
+            <?php foreach ($creditLombardLines as $line): $profile = account_tracker_credit_line_profile($line); ?>
+                <form method="post" enctype="multipart/form-data" class="lombard-control-form">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="check_credit_lombard">
+                    <input type="hidden" name="credit_line_id" value="<?= (int) $line['id'] ?>">
+                    <div><strong><?= e((string) $line['name']) ?></strong><br><span class="tiny-note">Dossier atteso: <?= e((string) ($profile['pledge_dossier_id'] ?? 'non configurato')) ?></span></div>
+                    <label>Export patrimonio Credit Lombard<input type="file" name="lombard_patrimony_file" accept=".xls,.xlsx" required></label>
+                    <button type="submit">Controlla</button>
+                </form>
+            <?php endforeach; ?>
+        </div>
+        <p class="tiny-note">Il file non viene conservato. Sono archiviati soltanto valori, provenienza ed esito del controllo; patrimonio e credito non vengono sommati.</p>
+        <?php if ($controlHistory): ?>
+            <div class="table-wrap lombard-control-history"><table><thead><tr><th>Data</th><th>Rapporto</th><th>Dossier rilevato</th><th>Portafoglio file</th><th>Mercato importato</th><th>Rateo</th><th>Totale confrontato</th><th>Differenza</th><th>Conto tecnico</th><th>Esito</th></tr></thead><tbody>
+            <?php foreach ($controlHistory as $check): $status = (string) $check['check_status']; ?>
+                <tr><td><?= e(date('d/m/Y', strtotime((string) $check['check_date']))) ?><br><span class="tiny-note"><?= e((string) $check['source_file_name']) ?></span></td><td><?= e((string) $check['credit_line_name']) ?></td><td><?= e((string) $check['detected_dossier_identifier']) ?></td><td>EUR <?= number_format((float) $check['portfolio_total'], 2, ',', '.') ?></td><td><?= $check['expected_market_value'] !== null ? 'EUR ' . number_format((float) $check['expected_market_value'], 2, ',', '.') : 'Non disponibile' ?></td><td><?= $check['expected_accrued_interest'] !== null ? 'EUR ' . number_format((float) $check['expected_accrued_interest'], 2, ',', '.') : 'Non disponibile' ?></td><td><?= $check['expected_portfolio_total'] !== null ? 'EUR ' . number_format((float) $check['expected_portfolio_total'], 2, ',', '.') : 'Non disponibile' ?></td><td><?= $check['difference_amount'] !== null ? 'EUR ' . number_format((float) $check['difference_amount'], 2, ',', '.') : '-' ?></td><td>EUR <?= number_format((float) ($check['accounting_balance'] ?? 0), 2, ',', '.') ?></td><td><span class="status-pill <?= $status === 'COHERENT' ? 'status-pill-success' : ($status === 'DIFFERENCE' ? 'status-pill-error' : '') ?>"><?= e(credit_lombard_control_status_label($status)) ?></span></td></tr>
+            <?php endforeach; ?>
+            </tbody></table></div>
+        <?php else: ?><div class="empty-inline">Nessun controllo ancora archiviato.</div><?php endif; ?>
+    <?php endif; ?>
+</section>
+<?php endif; ?>
 <?php include __DIR__ . '/partials/footer.php'; ?>

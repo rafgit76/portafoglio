@@ -3018,6 +3018,52 @@ tbody tr.snapshot-row-min:hover {
     color: #126a3a;
 }
 
+.status-pill-error {
+    border-color: #f3b3bd;
+    background: #fff1f3;
+    color: #b42338;
+}
+
+.lombard-control-grid {
+    display: grid;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.lombard-control-form {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.8fr) minmax(320px, 1.8fr) auto;
+    align-items: end;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--line);
+    background: #f8fbfc;
+}
+
+.lombard-control-form label {
+    margin: 0;
+}
+
+.lombard-control-form input[type="file"] {
+    width: 100%;
+}
+
+.lombard-control-history {
+    margin-top: 18px;
+}
+
+.lombard-control-history .tiny-note {
+    overflow-wrap: anywhere;
+}
+
+.empty-inline {
+    margin-top: 18px;
+    padding: 18px;
+    border: 1px dashed var(--line);
+    color: var(--muted);
+    background: #f8fbfc;
+}
+
 .credit-profile-metrics,
 .credit-profile-relations {
     display: grid;
@@ -3066,6 +3112,11 @@ tbody tr.snapshot-row-min:hover {
 }
 
 @media (max-width: 760px) {
+    .lombard-control-form {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
     .credit-profile-metrics,
     .credit-profile-relations {
         grid-template-columns: 1fr;

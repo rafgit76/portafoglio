@@ -35,6 +35,9 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
 
     $positionsRaw = [];
     foreach ($parsedPositions as $position) {
+        if (!defined(FinecoXlsxParser::class . '::SUPPORTS_ACCRUED_INTEREST')) {
+            throw new RuntimeException('Parser Fineco non aggiornato: ricarica lib/fineco_xlsx_parser.php prima di importare il dossier.');
+        }
         $title = $position->title;
         $isin = $position->isin;
         $assetType = map_instrument_type($position->instrument);
@@ -45,6 +48,7 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
         $cur = $position->currentPrice;
         $cost = $position->costBasis;
         $market = $position->marketValue;
+        $accruedInterest = $position->accruedInterest;
         $gain = $position->unrealizedPnl;
         $varPct = $position->varPct;
 
@@ -60,6 +64,7 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
                 'quantity' => 0.0,
                 'cost_basis' => 0.0,
                 'market_value' => 0.0,
+                'accrued_interest' => 0.0,
                 'unrealized_pnl' => 0.0,
                 'weighted_var_component' => 0.0,
                 'has_avg' => false,
@@ -71,6 +76,7 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
         $positionsRaw[$key]['quantity'] += $qty;
         $positionsRaw[$key]['cost_basis'] += $cost;
         $positionsRaw[$key]['market_value'] += $market;
+        $positionsRaw[$key]['accrued_interest'] += $accruedInterest;
         $positionsRaw[$key]['unrealized_pnl'] += $gain;
         $positionsRaw[$key]['weighted_var_component'] += ($varPct * $market);
         $positionsRaw[$key]['sum_avg_x_qty'] += ($avg * $qty);
@@ -89,6 +95,7 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
 
     $pdo = db();
     $accountTrackerEnabled = account_tracker_schema_ready($pdo);
+    $accruedInterestEnabled = account_tracker_accrued_interest_schema_ready($pdo);
     $dossier = $accountTrackerEnabled ? account_tracker_find_dossier($pdo, $dossierCode) : null;
     if ($accountTrackerEnabled && (!$dossier || !(bool) $dossier['is_active'])) {
         throw new RuntimeException('Dossier non disponibile per l\'import.');
@@ -150,17 +157,28 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
              WHERE id = :id'
         );
 
-        $stmtInsertPos = $pdo->prepare(
-            $accountTrackerEnabled
-                ? 'INSERT INTO pf_snapshot_positions
-                    (snapshot_id, dossier_id, asset_id, quantity, avg_load_price, current_price, cost_basis, market_value, unrealized_pnl, weight_pct, currency, data_origin, imported_gain_value, imported_weight_pct)
-                   VALUES
-                    (:snapshot_id, :dossier_id, :asset_id, :quantity, :avg_load_price, :current_price, :cost_basis, :market_value, :unrealized_pnl, :weight_pct, :currency, "IMPORT_FINECO", :imported_gain_value, :imported_weight_pct)'
-                : 'INSERT INTO pf_snapshot_positions
-                    (snapshot_id, asset_id, quantity, avg_load_price, current_price, cost_basis, market_value, unrealized_pnl, weight_pct, currency, imported_gain_value, imported_weight_pct)
-                   VALUES
-                    (:snapshot_id, :asset_id, :quantity, :avg_load_price, :current_price, :cost_basis, :market_value, :unrealized_pnl, :weight_pct, :currency, :imported_gain_value, :imported_weight_pct)'
-        );
+        if ($accountTrackerEnabled && $accruedInterestEnabled) {
+            $positionSql = 'INSERT INTO pf_snapshot_positions
+                (snapshot_id, dossier_id, asset_id, quantity, avg_load_price, current_price, cost_basis, market_value, accrued_interest, unrealized_pnl, weight_pct, currency, data_origin, imported_gain_value, imported_weight_pct)
+               VALUES
+                (:snapshot_id, :dossier_id, :asset_id, :quantity, :avg_load_price, :current_price, :cost_basis, :market_value, :accrued_interest, :unrealized_pnl, :weight_pct, :currency, "IMPORT_FINECO", :imported_gain_value, :imported_weight_pct)';
+        } elseif ($accountTrackerEnabled) {
+            $positionSql = 'INSERT INTO pf_snapshot_positions
+                (snapshot_id, dossier_id, asset_id, quantity, avg_load_price, current_price, cost_basis, market_value, unrealized_pnl, weight_pct, currency, data_origin, imported_gain_value, imported_weight_pct)
+               VALUES
+                (:snapshot_id, :dossier_id, :asset_id, :quantity, :avg_load_price, :current_price, :cost_basis, :market_value, :unrealized_pnl, :weight_pct, :currency, "IMPORT_FINECO", :imported_gain_value, :imported_weight_pct)';
+        } elseif ($accruedInterestEnabled) {
+            $positionSql = 'INSERT INTO pf_snapshot_positions
+                (snapshot_id, asset_id, quantity, avg_load_price, current_price, cost_basis, market_value, accrued_interest, unrealized_pnl, weight_pct, currency, imported_gain_value, imported_weight_pct)
+               VALUES
+                (:snapshot_id, :asset_id, :quantity, :avg_load_price, :current_price, :cost_basis, :market_value, :accrued_interest, :unrealized_pnl, :weight_pct, :currency, :imported_gain_value, :imported_weight_pct)';
+        } else {
+            $positionSql = 'INSERT INTO pf_snapshot_positions
+                (snapshot_id, asset_id, quantity, avg_load_price, current_price, cost_basis, market_value, unrealized_pnl, weight_pct, currency, imported_gain_value, imported_weight_pct)
+               VALUES
+                (:snapshot_id, :asset_id, :quantity, :avg_load_price, :current_price, :cost_basis, :market_value, :unrealized_pnl, :weight_pct, :currency, :imported_gain_value, :imported_weight_pct)';
+        }
+        $stmtInsertPos = $pdo->prepare($positionSql);
 
         $sumCost = 0.0;
         $sumPnl = 0.0;
@@ -211,6 +229,7 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
                     'quantity' => 0.0,
                     'cost_basis' => 0.0,
                     'market_value' => 0.0,
+                    'accrued_interest' => 0.0,
                     'unrealized_pnl' => 0.0,
                     'sum_avg_x_qty' => 0.0,
                     'sum_current_x_qty' => 0.0,
@@ -221,6 +240,7 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
             $positionsByAssetId[$assetId]['quantity'] += $p['quantity'];
             $positionsByAssetId[$assetId]['cost_basis'] += $p['cost_basis'];
             $positionsByAssetId[$assetId]['market_value'] += $p['market_value'];
+            $positionsByAssetId[$assetId]['accrued_interest'] += $p['accrued_interest'];
             $positionsByAssetId[$assetId]['unrealized_pnl'] += $p['unrealized_pnl'];
             $positionsByAssetId[$assetId]['sum_avg_x_qty'] += $p['sum_avg_x_qty'];
             $positionsByAssetId[$assetId]['sum_current_x_qty'] += $p['sum_current_x_qty'];
@@ -271,6 +291,9 @@ function import_fineco_spreadsheet(string $uploadedPath, string $originalFileNam
             ];
             if ($accountTrackerEnabled) {
                 $positionParams[':dossier_id'] = (int) $dossier['id'];
+            }
+            if ($accruedInterestEnabled) {
+                $positionParams[':accrued_interest'] = $p['accrued_interest'];
             }
             $stmtInsertPos->execute($positionParams);
 

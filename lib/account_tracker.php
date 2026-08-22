@@ -86,6 +86,18 @@ function account_tracker_credit_profile_schema_ready(?PDO $pdo = null): bool
     return true;
 }
 
+function account_tracker_accrued_interest_schema_ready(?PDO $pdo = null): bool
+{
+    $pdo ??= db();
+    try {
+        $columns = $pdo->query('SHOW COLUMNS FROM `pf_snapshot_positions`')->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Throwable) {
+        return false;
+    }
+
+    return in_array('accrued_interest', $columns, true);
+}
+
 function account_tracker_dossiers(PDO $pdo, bool $includeInactive = false): array
 {
     if (!account_tracker_schema_ready($pdo)) {
@@ -925,6 +937,29 @@ function account_tracker_patrimonial_metrics(PDO $pdo): array
     ];
 }
 
+function account_tracker_latest_state_contains_dossier(array $rows, int $dossierId): bool
+{
+    if ($rows === []) {
+        return false;
+    }
+
+    $latestDate = (string) ($rows[0]['snapshot_date'] ?? '');
+    if ($latestDate === '') {
+        return false;
+    }
+
+    foreach ($rows as $row) {
+        if ((string) ($row['snapshot_date'] ?? '') !== $latestDate) {
+            break;
+        }
+        if ((int) ($row['dossier_id'] ?? 0) === $dossierId) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function account_tracker_detect_transfer_candidates(PDO $pdo, int $snapshotId, int $targetDossierId): array
 {
     if (!account_tracker_schema_ready($pdo)) {
@@ -959,6 +994,13 @@ function account_tracker_detect_transfer_candidates(PDO $pdo, int $snapshotId, i
          WHERE p.asset_id = :asset_id AND p.dossier_id <> :target_dossier_id AND s.snapshot_date < :snapshot_date
          ORDER BY s.snapshot_date DESC, s.id DESC LIMIT 1'
     );
+    $findLatestPreviousState = $pdo->prepare(
+        'SELECT p.dossier_id, s.snapshot_date
+         FROM pf_snapshot_positions p
+         JOIN pf_snapshots s ON s.id = p.snapshot_id
+         WHERE p.asset_id = :asset_id AND s.snapshot_date < :snapshot_date
+         ORDER BY s.snapshot_date DESC, s.id DESC, p.id DESC'
+    );
     $existsCurrentOther = $pdo->prepare(
         'SELECT COUNT(*) FROM pf_snapshot_positions
          WHERE snapshot_id = :snapshot_id AND asset_id = :asset_id AND dossier_id <> :target_dossier_id'
@@ -978,6 +1020,11 @@ function account_tracker_detect_transfer_candidates(PDO $pdo, int $snapshotId, i
     foreach ($targetPositions->fetchAll() as $target) {
         $existsCurrentOther->execute([':snapshot_id' => $snapshotId, ':asset_id' => $target['asset_id'], ':target_dossier_id' => $targetDossierId]);
         if ((int) $existsCurrentOther->fetchColumn() > 0) {
+            continue;
+        }
+
+        $findLatestPreviousState->execute([':asset_id' => $target['asset_id'], ':snapshot_date' => $snapshotDate]);
+        if (account_tracker_latest_state_contains_dossier($findLatestPreviousState->fetchAll(), $targetDossierId)) {
             continue;
         }
 

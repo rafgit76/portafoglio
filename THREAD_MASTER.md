@@ -5,9 +5,22 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `2.6.0`
+- `2.7.1`
 
-Profilo ufficiale Credit Lombard v2.6.0:
+Controllo rapporto Credit Lombard v2.7.1:
+- il valore patrimoniale del dossier viene confrontato con valore di mercato piu rateo dello snapshot Lombard della stessa data;
+- mercato, rateo e totale confrontato restano distinti nell archivio dei controlli;
+- caso reale 22/08/2026: EUR 19.644,00 + EUR 95,20 = EUR 19.739,20;
+- migrazione incrementale richiesta: `sql/migration_2_7_1_lombard_accrued_interest.sql`, poi reimport del dossier Lombard per valorizzare il rateo.
+
+Controllo rapporto Credit Lombard v2.7.0:
+- nella Gestione fidi e disponibile un upload separato dell export Patrimonio del solo rapporto Lombard;
+- il parser rileva data e identificativo del dossier a pegno, rifiutando patrimoni complessivi o rapporti diversi;
+- il valore del dossier viene confrontato al centesimo con il portafoglio Credit Lombard della stessa data;
+- l archivio `pf_credit_lombard_checks` conserva valori ed esito, non il file, e non modifica snapshot, posizioni, P/L, patrimonio o credito;
+- migrazione incrementale richiesta: `sql/migration_2_7_0_credit_lombard_checks.sql` dopo backup database.
+
+Profilo ufficiale Credit Lombard v2.6.0, correzione anteprima import v2.6.1 e deduplicazione trasferimenti v2.6.2:
 - `pf_credit_lines.credit_type` resta il tipo canonico della linea e `agreed_amount` resta l importo accordato, evitando colonne duplicate;
 - conto ordinario collegato, conto a pegno e dossier a garanzia hanno identificativi separati; conto e dossier possono condividere il numero Fineco ma restano entita logiche differenti;
 - validita, attivazione, provenienza `fineco_acceptance_letter` e documento sorgente sono salvati nell anagrafica della linea;
