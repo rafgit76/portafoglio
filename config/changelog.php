@@ -2,6 +2,48 @@
 
 return [
     [
+        'version' => '2.7.1',
+        'date' => '2026-08-22',
+        'title' => 'Controllo Lombard comprensivo del rateo',
+        'changes' => [
+            'Il parser del portafoglio acquisisce il rateo Fineco come componente separata senza alterare valore di mercato, P/L o storico.',
+            'Il controllo del rapporto Lombard confronta il totale Fineco con valore di mercato piu rateo dello stesso dossier e della stessa data.',
+            'Nell archivio dei controlli sono visibili separatamente mercato importato, rateo e totale confrontato.',
+            'Il caso reale del 22 agosto riconcilia EUR 19.644,00 di mercato e EUR 95,20 di rateo con EUR 19.739,20 riportati dal patrimonio Fineco.',
+        ],
+    ],
+    [
+        'version' => '2.7.0',
+        'date' => '2026-08-22',
+        'title' => 'Controllo separato del rapporto Credit Lombard',
+        'changes' => [
+            'Aggiunto nella Gestione fidi il pulsante di controllo dell export Patrimonio del solo rapporto Credit Lombard.',
+            'Il controllo verifica numero del dossier a pegno, riconciliazione interna e valore del portafoglio Lombard della stessa data.',
+            'Gli esiti vengono archiviati senza conservare il file e senza modificare snapshot, posizioni, P/L, patrimonio o credito.',
+            'I file del patrimonio complessivo o appartenenti a un dossier diverso vengono rifiutati per evitare duplicazioni.',
+        ],
+    ],
+    [
+        'version' => '2.6.2',
+        'date' => '2026-08-22',
+        'title' => 'Trasferimenti interni senza duplicati',
+        'changes' => [
+            'Corretto il rilevatore multi-dossier: una posizione gia presente nel dossier di destinazione nello snapshot precedente non genera una nuova proposta di trasferimento.',
+            'Il trasferimento Credit Lombard gia confermato resta unico; gli import giornalieri successivi sono riconosciuti come continuita della stessa posizione.',
+            'Nessuna modifica a posizioni, valore di carico, P/L, patrimonio o trasferimenti gia archiviati.',
+        ],
+    ],
+    [
+        'version' => '2.6.1',
+        'date' => '2026-08-22',
+        'title' => 'Anteprima import portafoglio corretta',
+        'changes' => [
+            'Corretta la formattazione dei totali nell anteprima multi-dossier che interrompeva la pagina prima della conferma finale.',
+            'Ripristinati warning, conferma manuale dello slot e pulsanti Conferma e importa o Annulla per gli export Fineco senza identificativo dossier affidabile.',
+            'Nessuna modifica al parser, agli snapshot o ai dati finanziari gia archiviati.',
+        ],
+    ],
+    [
         'version' => '2.6.0',
         'date' => '2026-08-21',
         'title' => 'Profilo ufficiale Credit Lombard',

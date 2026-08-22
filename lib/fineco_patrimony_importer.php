@@ -46,6 +46,7 @@ final class FinecoPatrimonyParser
             $values = [];
             $details = [];
             $dossiers = [];
+            $metadata = ['snapshot_date' => null];
             $rowsSeen = 0;
             $currentDossierIndex = null;
             foreach ($book->getWorksheetIterator() as $sheet) {
@@ -60,6 +61,9 @@ final class FinecoPatrimonyParser
                         continue;
                     }
                     $rowsSeen++;
+                    if ($metadata['snapshot_date'] === null) {
+                        $metadata['snapshot_date'] = $this->snapshotDateFromCells($cells);
+                    }
                     $label = $this->normalizeLabel((string) $cells[0]);
                     $amount = $this->firstNumber(array_slice($cells, 1));
                     if ($amount === null) {
@@ -81,6 +85,7 @@ final class FinecoPatrimonyParser
                             'source_label' => (string) $cells[0],
                             'amount' => $amount,
                             'code_hint' => $this->dossierCodeHint($label),
+                            'external_identifier' => $this->dossierExternalIdentifier((string) $cells[0]),
                             'categories' => [],
                         ];
                         $currentDossierIndex = array_key_last($dossiers);
@@ -104,6 +109,7 @@ final class FinecoPatrimonyParser
             'values' => $values,
             'details' => $details,
             'dossiers' => $dossiers,
+            'metadata' => $metadata,
             'rows_seen' => $rowsSeen,
         ];
     }
@@ -136,6 +142,26 @@ final class FinecoPatrimonyParser
             return 'ordinario';
         }
         return 'altro';
+    }
+
+    private function dossierExternalIdentifier(string $label): ?string
+    {
+        if (preg_match('/\bn\s*[.]?\s*([0-9]{4,})\b/i', $label, $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[1];
+    }
+
+    private function snapshotDateFromCells(array $cells): ?string
+    {
+        foreach ($cells as $cell) {
+            if (preg_match('/patrimonio\s+complessivo\s+aggiornato\s+al\s+(\d{2})\/(\d{2})\/(\d{4})/iu', (string) $cell, $matches) === 1) {
+                return $matches[3] . '-' . $matches[2] . '-' . $matches[1];
+            }
+        }
+
+        return null;
     }
 }
 

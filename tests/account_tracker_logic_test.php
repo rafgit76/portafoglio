@@ -3,6 +3,7 @@ require_once __DIR__ . '/../lib/account_tracker.php';
 require_once __DIR__ . '/../lib/fineco_patrimony_importer.php';
 require_once __DIR__ . '/../lib/fineco_importer.php';
 require_once __DIR__ . '/../lib/ai_report.php';
+require_once __DIR__ . '/../lib/credit_lombard_control.php';
 
 $checks = 0;
 $assert = static function (bool $condition, string $label) use (&$checks): void {
@@ -281,5 +282,100 @@ try {
     $rejectedCausalWording = true;
 }
 $assert($rejectedCausalWording, 'nesso causale patrimoniale rifiutato');
+
+// L'anteprima multi-dossier deve arrivare fino alla conferma anche quando Fineco non espone il dossier.
+$uploadSource = file_get_contents(__DIR__ . '/../upload.php');
+$assert(is_string($uploadSource) && !str_contains($uploadSource, 'format_currency('), 'anteprima import non richiama helper inesistente');
+$assert(is_string($uploadSource) && str_contains($uploadSource, 'confirm_unverified_dossier'), 'conferma manuale dossier presente');
+$assert(is_string($uploadSource) && str_contains($uploadSource, 'Conferma e importa'), 'pulsante conferma import presente');
+
+// Un titolo gia presente nel dossier di destinazione il giorno precedente e una continuita, non un nuovo trasferimento.
+$previousLombardState = [
+    ['snapshot_date' => '2026-08-21', 'dossier_id' => 2],
+    ['snapshot_date' => '2026-08-19', 'dossier_id' => 1],
+];
+$previousMainState = [
+    ['snapshot_date' => '2026-08-21', 'dossier_id' => 1],
+    ['snapshot_date' => '2026-08-19', 'dossier_id' => 1],
+];
+$assert(account_tracker_latest_state_contains_dossier($previousLombardState, 2), 'continuita dossier Lombard riconosciuta');
+$assert(!account_tracker_latest_state_contains_dossier($previousMainState, 2), 'nuovo passaggio verso Lombard ancora rilevabile');
+
+// Export patrimonio del solo rapporto Credit Lombard: controllo separato e non invasivo.
+$lombardPatrimonyExport = [
+    'values' => [
+        'fineco_total_assets' => 19751.92,
+        'accounting_balance' => 12.72,
+        'available_balance' => 12.72,
+        'liquidity_total' => 12.72,
+        'fineco_portfolio_total' => 19739.20,
+    ],
+    'dossiers' => [[
+        'source_label' => 'Dossier Principale a pegno n.5243936',
+        'amount' => 19739.20,
+        'code_hint' => 'credit_lombard',
+        'external_identifier' => '5243936',
+        'categories' => ['Obbligazioni' => 19739.20],
+    ]],
+    'metadata' => ['snapshot_date' => '2026-08-22'],
+];
+$lombardControl = credit_lombard_control_extract($lombardPatrimonyExport, '5243936');
+$assert($lombardControl['check_date'] === '2026-08-22', 'data export controllo Lombard');
+$assert($lombardControl['detected_dossier_identifier'] === '5243936', 'dossier a pegno controllo Lombard');
+$assert((float) $lombardControl['portfolio_total'] === 19739.20, 'portafoglio rapporto Lombard');
+$assert((float) $lombardControl['accounting_balance'] === 12.72, 'conto tecnico Lombard');
+$assert((float) $lombardControl['fineco_total_assets'] === 19751.92, 'patrimonio rapporto Lombard');
+$assert((float) $lombardControl['internal_difference'] === 0.0, 'riconciliazione interna rapporto Lombard');
+$coherentControl = credit_lombard_control_compare($lombardControl, [
+    'snapshot_id' => 22,
+    'snapshot_date' => '2026-08-22',
+    'total_market_value' => 19644.00,
+    'total_accrued_interest' => 95.20,
+]);
+$assert($coherentControl['check_status'] === 'COHERENT', 'controllo Lombard coerente al centesimo');
+$assert((float) $coherentControl['expected_market_value'] === 19644.00, 'valore di mercato Lombard conservato separatamente');
+$assert((float) $coherentControl['expected_accrued_interest'] === 95.20, 'rateo Lombard conservato separatamente');
+$assert((float) $coherentControl['expected_portfolio_total'] === 19739.20, 'totale Lombard confrontato include il rateo');
+$assert((float) $coherentControl['difference_amount'] === 0.0, 'nessuna differenza dossier Lombard');
+$differentControl = credit_lombard_control_compare($lombardControl, ['total_market_value' => 19645.00, 'total_accrued_interest' => 95.20]);
+$assert($differentControl['check_status'] === 'DIFFERENCE' && (float) $differentControl['difference_amount'] === -1.0, 'differenza Lombard segnalata senza correzioni');
+$assert(credit_lombard_control_compare($lombardControl, null)['check_status'] === 'NO_COMPARISON', 'controllo archiviabile senza snapshot della stessa data');
+$assert(credit_lombard_control_date_from_filename('patrimonio-totale-20260822-072345.xls') === '2026-08-22', 'data controllo recuperata dal filename come fallback');
+
+$wrongLombardFileRejected = false;
+try {
+    credit_lombard_control_extract($lombardPatrimonyExport, '9999999');
+} catch (RuntimeException) {
+    $wrongLombardFileRejected = true;
+}
+$assert($wrongLombardFileRejected, 'file di un altro dossier rifiutato');
+
+$mainPatrimonyRejected = false;
+try {
+    $mainPatrimony = $lombardPatrimonyExport;
+    $mainPatrimony['dossiers'][] = [
+        'source_label' => 'Dossier Principale n.3274177',
+        'amount' => 167000.0,
+        'code_hint' => 'ordinario',
+        'external_identifier' => '3274177',
+        'categories' => [],
+    ];
+    credit_lombard_control_extract($mainPatrimony, '5243936');
+} catch (RuntimeException) {
+    $mainPatrimonyRejected = true;
+}
+$assert($mainPatrimonyRejected, 'patrimonio complessivo non accettato come controllo del solo rapporto Lombard');
+
+$controlMigration = file_get_contents(__DIR__ . '/../sql/migration_2_7_0_credit_lombard_checks.sql');
+$assert(is_string($controlMigration) && str_contains($controlMigration, 'CREATE TABLE IF NOT EXISTS pf_credit_lombard_checks'), 'migrazione archivio controlli Lombard presente');
+$assert(!str_contains((string) $controlMigration, 'UPDATE pf_snapshots'), 'migrazione controlli non modifica snapshot');
+$assert(!str_contains((string) $controlMigration, 'UPDATE pf_snapshot_positions'), 'migrazione controlli non modifica posizioni');
+
+$accruedInterestMigration = file_get_contents(__DIR__ . '/../sql/migration_2_7_1_lombard_accrued_interest.sql');
+$assert(is_string($accruedInterestMigration) && str_contains($accruedInterestMigration, 'accrued_interest'), 'migrazione rateo Lombard presente');
+$assert(str_contains((string) $accruedInterestMigration, 'expected_market_value'), 'archivio controllo conserva il mercato separato');
+$assert(str_contains((string) $accruedInterestMigration, 'expected_accrued_interest'), 'archivio controllo conserva il rateo separato');
+$assert(!str_contains((string) $accruedInterestMigration, 'UPDATE pf_snapshots'), 'migrazione rateo non modifica snapshot');
+$assert(!str_contains((string) $accruedInterestMigration, 'UPDATE pf_snapshot_positions'), 'migrazione rateo non modifica posizioni');
 
 echo "OK: {$checks} controlli logici superati\n";

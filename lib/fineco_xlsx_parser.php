@@ -18,13 +18,16 @@ final class FinecoParsedPosition
         public readonly float $costBasis,
         public readonly float $marketValue,
         public readonly float $unrealizedPnl,
-        public readonly float $varPct
+        public readonly float $varPct,
+        public readonly float $accruedInterest
     ) {
     }
 }
 
 final class FinecoXlsxParser
 {
+    public const SUPPORTS_ACCRUED_INTEREST = true;
+
     private const HEADER_ALIASES = [
         'titolo' => ['titolo', 'strumento titolo'],
         'isin' => ['isin'],
@@ -36,6 +39,7 @@ final class FinecoXlsxParser
         'valore_di_carico' => ['valore di carico', 'controvalore di carico'],
         'p_zo_di_mercato' => ['pzo di mercato', 'prezzo di mercato'],
         'valore_di_mercato_euro' => ['valore di mercato eur', 'valore di mercato euro', 'valore di mercato'],
+        'rateo' => ['rateo', 'rateo eur', 'rateo euro'],
         'var_pct' => ['var', 'var percentuale'],
         'var_euro' => ['var eur', 'var euro'],
     ];
@@ -55,6 +59,7 @@ final class FinecoXlsxParser
         'valore_di_carico' => true,
         'p_zo_di_mercato' => true,
         'valore_di_mercato_euro' => true,
+        'rateo' => true,
         'var_pct' => true,
         'var_euro' => true,
     ];
@@ -436,7 +441,8 @@ final class FinecoXlsxParser
             costBasis: parse_decimal($record['valore_di_carico'] ?? null),
             marketValue: parse_decimal($record['valore_di_mercato_euro'] ?? null),
             unrealizedPnl: parse_decimal($record['var_euro'] ?? null),
-            varPct: parse_percentage_to_decimal($record['var_pct'] ?? null)
+            varPct: parse_percentage_to_decimal($record['var_pct'] ?? null),
+            accruedInterest: parse_decimal($record['rateo'] ?? null)
         );
     }
 

@@ -200,10 +200,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Il file caricato sembra appartenere a ' . $suggestedSlot['label'] . ' e non a ' . $slotDefinition['label'] . '. Usa lo slot corretto.');
             }
 
-            $summary = ['positions' => count($positions), 'cost_basis' => 0.0, 'market_value' => 0.0];
+            $summary = ['positions' => count($positions), 'cost_basis' => 0.0, 'market_value' => 0.0, 'accrued_interest' => 0.0];
             foreach ($positions as $position) {
+                if (!defined(FinecoXlsxParser::class . '::SUPPORTS_ACCRUED_INTEREST')) {
+                    throw new RuntimeException('Parser Fineco non aggiornato: ricarica lib/fineco_xlsx_parser.php e riprova.');
+                }
                 $summary['cost_basis'] += $position->costBasis;
                 $summary['market_value'] += $position->marketValue;
+                $summary['accrued_interest'] += $position->accruedInterest;
             }
 
             upload_clear_pending_import();
@@ -269,8 +273,9 @@ include __DIR__ . '/partials/header.php';
             <article class="stat-card"><span>Dossier selezionato</span><strong><?= e((string) $pendingImportPreview['slot_label']) ?></strong></article>
             <article class="stat-card"><span>Dossier rilevato</span><strong><?= e((string) ($inspection['label'] ?? 'Non rilevato')) ?></strong></article>
             <article class="stat-card"><span>Numero posizioni</span><strong><?= e((string) ($summary['positions'] ?? 0)) ?></strong></article>
-            <article class="stat-card"><span>Valore di carico</span><strong><?= e(format_currency((float) ($summary['cost_basis'] ?? 0))) ?></strong></article>
-            <article class="stat-card"><span>Valore di mercato</span><strong><?= e(format_currency((float) ($summary['market_value'] ?? 0))) ?></strong></article>
+            <article class="stat-card"><span>Valore di carico</span><strong>EUR <?= number_format((float) ($summary['cost_basis'] ?? 0), 2, ',', '.') ?></strong></article>
+            <article class="stat-card"><span>Valore di mercato</span><strong>EUR <?= number_format((float) ($summary['market_value'] ?? 0), 2, ',', '.') ?></strong></article>
+            <?php if (abs((float) ($summary['accrued_interest'] ?? 0)) >= 0.005): ?><article class="stat-card"><span>Rateo</span><strong>EUR <?= number_format((float) $summary['accrued_interest'], 2, ',', '.') ?></strong></article><?php endif; ?>
         </div>
         <?php if (!empty($inspection['evidence'])): ?>
             <p class="tiny-note">Identificativo rilevato: <?= e(implode(' | ', (array) $inspection['evidence'])) ?></p>
