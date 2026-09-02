@@ -7,8 +7,9 @@ $error = null;
 $customTitle = trim((string) ($_POST['custom_title'] ?? ''));
 $customPrompt = trim((string) ($_POST['custom_prompt'] ?? ''));
 $geminiConfig = app_config()['gemini'] ?? [];
-$configuredModel = (string) (($geminiConfig['model'] ?? '') ?: 'gemini-3.5-flash-lite');
-$thinkingLevel = (string) (($geminiConfig['thinking_level'] ?? '') ?: 'medium');
+$configuredModel = (string) (($geminiConfig['model'] ?? '') ?: 'gemini-3.8-flash');
+$thinkingLevel = ai_report_thinking_level($geminiConfig, 'custom');
+$generalThinkingLevel = ai_report_thinking_level($geminiConfig, 'general');
 $maxOutputTokens = (int) ($geminiConfig['max_output_tokens'] ?? 20000);
 $apiKey = (string) ($geminiConfig['api_key'] ?? '');
 $apiConfigured = $apiKey !== '' && !str_contains($apiKey, 'INSERISCI_CHIAVE');
@@ -288,7 +289,7 @@ include __DIR__ . '/partials/header.php';
         <p class="ai-meta-big"><?= e($configuredModel) ?></p>
     </article>
     <article class="card">
-        <h3>Ragionamento</h3>
+        <h3>Ragionamento predefinito</h3>
         <p class="ai-meta-big"><?= e(ucfirst($thinkingLevel)) ?></p>
         <p class="tiny-note">Budget massimo <?= number_format($maxOutputTokens, 0, ',', '.') ?> token</p>
     </article>
@@ -318,8 +319,8 @@ include __DIR__ . '/partials/header.php';
             <strong><?= number_format((int) $archiveStats['thinking_tokens'], 0, ',', '.') ?></strong>
         </div>
         <div>
-            <span>Costo listino stimato</span>
-            <strong>$ <?= number_format((float) $archiveStats['estimated_cost_usd'], 5, ',', '.') ?></strong>
+            <span><?= $archiveStats['missing_costs'] > 0 && $archiveStats['estimated_cost_usd'] !== null ? 'Costo listino stimato (parziale)' : 'Costo listino stimato' ?></span>
+            <strong><?= e(ai_report_format_cost($archiveStats['estimated_cost_usd'])) ?></strong>
         </div>
     </section>
 <?php endif; ?>
@@ -474,6 +475,7 @@ include __DIR__ . '/partials/header.php';
             <span class="ai-generator-kicker">Analisi standard</span>
             <h2>Report complessivo</h2>
             <p>Analizza tutti gli snapshot con la struttura e i controlli numerici del prompt madre.</p>
+            <p class="tiny-note">Ragionamento: <?= e(ucfirst($generalThinkingLevel)) ?></p>
         </div>
         <form method="post" id="general-report-form">
             <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
@@ -720,7 +722,7 @@ include __DIR__ . '/partials/header.php';
                         </td>
                         <td><?= e($period !== '' ? $period : '-') ?></td>
                         <td class="mono-cell"><?= number_format((int) ($usage['total_tokens'] ?? 0), 0, ',', '.') ?></td>
-                        <td class="mono-cell">$ <?= number_format((float) ($report['estimated_cost_usd'] ?? 0), 5, ',', '.') ?></td>
+                        <td class="mono-cell"><?= e(ai_report_format_cost(ai_report_record_estimated_cost_usd($report))) ?></td>
                         <td>
                             <div class="ai-archive-actions">
                                 <a class="ai-open-link" href="<?= e(app_base_path()) ?>/ai_report_view.php?id=<?= e(rawurlencode((string) $report['id'])) ?>">Apri</a>

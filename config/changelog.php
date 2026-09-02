@@ -2,6 +2,39 @@
 
 return [
     [
+        'version' => '2.7.4',
+        'date' => '2026-09-02',
+        'title' => 'Ragionamento dedicato al complessivo del portafoglio',
+        'changes' => [
+            'Il report complessivo del portafoglio con Gemini 3.8 Flash usa Low; gli altri report mantengono il ragionamento configurato.',
+            'Il livello effettivo compare nella sezione di generazione e continua a essere conservato nei report archiviati.',
+            'In caso di limite token il messaggio mostra budget, livello, tentativi e consumi comunicati dal provider, senza salvare testi incompleti o riprovare automaticamente.',
+            'Eventuali parti di ragionamento restituite da Gemini sono escluse dal testo del report; budget massimo, prompt e controlli numerici invariati.',
+        ],
+    ],
+    [
+        'version' => '2.7.3',
+        'date' => '2026-09-02',
+        'title' => 'Stime AI mancanti e sintesi del report complessivo',
+        'changes' => [
+            'Le stime mancanti vengono ricostruite in lettura da modello e consumi archiviati quando disponibili, senza modificare i report originali.',
+            'Un costo non determinabile viene mostrato come Non disponibile invece di zero; i totali incompleti sono indicati come parziali.',
+            'Il tentativo correttivo dei report complessivi troppo lunghi usa un budget compatto per sezione e il conteggio effettivo delle parole.',
+            'Primo prompt, livello medium, limite di 1400 parole, controlli numerici e massimo di due tentativi invariati.',
+        ],
+    ],
+    [
+        'version' => '2.7.2',
+        'date' => '2026-09-02',
+        'title' => 'Report AI con Gemini 3.8 Flash',
+        'changes' => [
+            'Aggiornato il modello AI predefinito a gemini-3.8-flash per i report di portafoglio e patrimonio.',
+            'Mantenuti invariati prompt, controlli numerici, livello di ragionamento medium e limiti di generazione per il confronto con Gemini 3.7 Flash.',
+            'Aggiunta la stima dei costi Gemini 3.8 Flash: $0,75 per milione di token input e $3,75 per milione di token output o ragionamento fino al 31 dicembre 2026.',
+            'Nessuna modifica a snapshot, import, calcoli finanziari o report gia archiviati.',
+        ],
+    ],
+    [
         'version' => '2.7.1',
         'date' => '2026-08-22',
         'title' => 'Controllo Lombard comprensivo del rateo',

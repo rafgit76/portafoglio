@@ -93,7 +93,7 @@ $reportType = ai_report_type_class((string) ($report['type'] ?? 'general'));
     </div>
     <div>
         <span>Costo listino stimato</span>
-        <strong>$ <?= number_format((float) ($report['estimated_cost_usd'] ?? 0), 5, ',', '.') ?></strong>
+        <strong><?= e(ai_report_format_cost(ai_report_record_estimated_cost_usd($report))) ?></strong>
     </div>
 </section>
 

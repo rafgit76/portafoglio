@@ -20,8 +20,10 @@ return [
     ],
     'gemini' => [
         'api_key' => 'YOUR_GEMINI_API_KEY',
-        'model' => 'gemini-3.7-flash',
+        'model' => 'gemini-3.8-flash',
         'thinking_level' => 'medium',
+        // General portfolio report with Gemini 3.8 Flash only.
+        'general_thinking_level' => 'low',
         'max_output_tokens' => 20000,
         'timeout_seconds' => 90,
     ],

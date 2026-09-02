@@ -5,7 +5,25 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `2.7.1`
+- `2.7.4`
+
+Complessivo portafoglio v2.7.4:
+- autorizzato dall utente Low solo per `general` con Gemini 3.8 Flash; gli altri report restano Medium, limite per tentativo 20000 invariato;
+- `general_thinking_level` configurabile, livello effettivo visibile e archiviato; confronto 3.7 Medium / 3.8 Low da etichettare come configurazioni diverse;
+- errori MAX_TOKENS espongono i consumi disponibili anche se il testo e vuoto, senza nuovi tentativi automatici e senza archiviare report incompleti;
+- nessuna generazione a pagamento eseguita dai test locali; l utente ha verificato sul server il complessivo 3.8 Low del 02/09/2026: report completo, due tentativi e costo stimato USD 0,05412. Il confronto con il 3.7 Medium (un tentativo, USD 0,07240) riguarda questa singola prova e non include le precedenti generazioni fallite.
+
+Correzione report v2.7.3:
+- costo null non piu convertito in zero; ricostruzione in lettura dai token se il modello e noto, nessuna riscrittura dell archivio;
+- report complessivo troppo lungo: solo il prompt correttivo cambia, con conteggio e budget per sezione; primo prompt, medium, validazione e massimo due tentativi invariati;
+- casi reali 02/09/2026, Gemini 3.8: giornaliero 7500 input / 2203 risposta / 3347 ragionamento = USD 0,0264375; patrimonio 5621 / 1321 / 4845 = USD 0,02733825;
+- nessuna migrazione; aggiornare insieme libreria AI, pagina archivio e vista report. Dopo FTP l utente ha verificato la generazione di giornaliero e complessivo patrimonio con costo non nullo.
+
+Upgrade Gemini v2.7.2:
+- modello predefinito `gemini-3.8-flash`; prompt, versione dei prompt, thinking `medium` e limiti invariati per il confronto con il 3.7;
+- stima input USD 0,75/M e output piu ragionamento USD 3,75/M fino al 31/12/2026; aggiornare il listino alla scadenza;
+- configurazioni private con override `gemini.model` richiedono l aggiornamento esplicito di quel valore;
+- nessuna migrazione, nessuna modifica a dati finanziari o report esistenti; generazione reale e confronto qualitativo a cura dell utente dopo il caricamento FTP.
 
 Controllo rapporto Credit Lombard v2.7.1:
 - il valore patrimoniale del dossier viene confrontato con valore di mercato piu rateo dello snapshot Lombard della stessa data;

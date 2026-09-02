@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.7.1`
+Versione corrente: `2.7.4`
 
 ## Credit Lombard e trasferimenti interni documentati
 
@@ -119,7 +119,19 @@ Per il trasferimento BTP del `20/08/2026`, non modificare lo storico automaticam
 
 La pagina `Report AI` e un centro operativo che usa Gemini lato server per generare report sullo storico degli snapshot. Per il portafoglio sono disponibili report complessivo, confronto quotidiano e confronto settimanale del sabato. La sezione Patrimonio e opzionale e offre le stesse tre modalita usando soltanto gli snapshot patrimoniali disponibili: mantiene separati patrimonio Fineco, portafoglio consolidato, liquidita, saldi e credito. Il confronto settimanale e disponibile esclusivamente il sabato e usa le rilevazioni con data esatta del sabato corrente e del sabato precedente, distanti sette giorni. Le anteprime sono calcolate gratuitamente da PHP, mentre la spiegazione AI parte solo dopo conferma. La semplice apertura della pagina non esegue chiamate API: ogni generazione richiede un'azione e una conferma esplicite. Durante l'elaborazione viene mostrato un overlay con avanzamento stimato, stato finale ed eventuali errori.
 Configura la chiave solo in `config/config.local.php` o tramite `PORTFOLIO_GEMINI_API_KEY`.
-Il modello predefinito e' `gemini-3.7-flash`, configurabile con `PORTFOLIO_GEMINI_MODEL`. Il listino introduttivo usato per la stima e' $0,75 per milione di token input e $3,75 per milione di token output o ragionamento fino al 31 dicembre 2026.
+Il modello predefinito e' `gemini-3.8-flash`, configurabile con `PORTFOLIO_GEMINI_MODEL`. Il listino introduttivo usato per la stima e' $0,75 per milione di token input e $3,75 per milione di token output o ragionamento fino al 31 dicembre 2026 (https://ai.google.dev/gemini-api/docs/pricing). La stima andra' aggiornata alla scadenza della promozione. Primo prompt, massimo 20000 token e timeout di 90 secondi restano invariati rispetto al 3.7. Il ragionamento predefinito e' `medium`; dalla v2.7.4 il solo complessivo del portafoglio con il 3.8 usa `low`.
+
+Per aggiornare un'installazione esistente, completare prima i report di confronto con il 3.7 e preservare `storage/`, database e configurazione privata. Se `config/config.local.php` contiene `gemini.model`, cambiare solo quel valore in `gemini-3.8-flash`: la configurazione locale ha precedenza sul valore predefinito e sulle variabili d'ambiente. Non sostituire API key, PIN o credenziali del database con i file sample. Nessuna migrazione SQL richiesta. Verificare il modello nella pagina Report AI prima di generare nuovi report. Per tornare al 3.7 basta ripristinare il valore del modello; i report archiviati mantengono modello e consumi originali.
+
+Test locali senza chiamate API: `php tests/ai_report_model_test.php` e `php tests/account_tracker_logic_test.php`.
+
+Correzione v2.7.3: le stime mancanti nei report precedenti vengono ricostruite soltanto in lettura, se modello e consumi input/risposta/ragionamento sono noti. Valori archiviati validi (anche zero) non vengono sostituiti; se non si puo stimare il costo, si mostra `Non disponibile`. Nessuna riscrittura dell'archivio e nessuna nuova chiamata API per aggiornare la visualizzazione. I totali con stime mancanti sono parziali.
+
+Il primo prompt del confronto 3.7/3.8 resta invariato. Solo il tentativo correttivo di un report complessivo oltre 1400 parole usa un prompt di sintesi mirato con conteggio PHP e budget per sezione. Non si tronca il testo, non si allenta la validazione e non si aggiungono tentativi. I report registrano la nuova versione della pipeline `2026-09-02-general-length-repair-v13`. I consumi dei tentativi falliti senza report archiviato non sono compresi nei totali dell'archivio e vanno verificati nella console del provider.
+
+Dalla v2.7.4, come concordato dopo gli errori `MAX_TOKENS`, solo il complessivo del portafoglio con `gemini-3.8-flash` usa `general_thinking_level = low`, configurabile anche tramite `PORTFOLIO_GEMINI_GENERAL_THINKING_LEVEL`. Il valore locale, se presente, ha precedenza. Giornalieri, settimanali, patrimonio, personalizzati e altri modelli continuano a usare `thinking_level` (Medium nella configurazione corrente). Nella sezione del complessivo e nel report archiviato compare il livello effettivo. Il confronto con il 3.7 Medium non e piu a parita di ragionamento. Non e stato aumentato il budget di 20000 token e non sono state aggiunte chiamate automatiche.
+
+Un errore di limite token include, quando il provider li comunica, input/risposta/ragionamento e costo stimato dei tentativi della richiesta corrente. Non viene creato un report incompleto e questi consumi non entrano nell'archivio. I blocchi con `thought: true` sono esclusi dal testo narrativo, non dalla contabilizzazione del ragionamento.
 Il livello di ragionamento predefinito e' `medium`, configurabile con `PORTFOLIO_GEMINI_THINKING_LEVEL`.
 Il budget massimo predefinito e' di 20000 token, configurabile con `PORTFOLIO_GEMINI_MAX_OUTPUT_TOKENS`.
 La system instruction impone la semantica dei dati Fineco, il divieto di introdurre cause esterne e l'uso esclusivo di un blocco di fatti numerici verificati e formattati da PHP.

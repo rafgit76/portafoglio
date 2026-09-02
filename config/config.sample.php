@@ -24,8 +24,10 @@ return [
     ],
     'gemini' => [
         'api_key' => getenv('PORTFOLIO_GEMINI_API_KEY') ?: '',
-        'model' => getenv('PORTFOLIO_GEMINI_MODEL') ?: 'gemini-3.7-flash',
+        'model' => getenv('PORTFOLIO_GEMINI_MODEL') ?: 'gemini-3.8-flash',
         'thinking_level' => getenv('PORTFOLIO_GEMINI_THINKING_LEVEL') ?: 'medium',
+        // General portfolio report with Gemini 3.8 Flash only.
+        'general_thinking_level' => getenv('PORTFOLIO_GEMINI_GENERAL_THINKING_LEVEL') ?: 'low',
         'max_output_tokens' => (int) (getenv('PORTFOLIO_GEMINI_MAX_OUTPUT_TOKENS') ?: 20000),
         'timeout_seconds' => (int) (getenv('PORTFOLIO_GEMINI_TIMEOUT_SECONDS') ?: 90),
     ],

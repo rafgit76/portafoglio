@@ -133,6 +133,7 @@ function ai_report_archive_stats(array $reports): array
         'thinking_tokens' => 0,
         'total_tokens' => 0,
         'estimated_cost_usd' => 0.0,
+        'missing_costs' => 0,
     ];
 
     foreach ($reports as $report) {
@@ -141,7 +142,16 @@ function ai_report_archive_stats(array $reports): array
         $stats['output_tokens'] += (int) ($usage['output_tokens'] ?? 0);
         $stats['thinking_tokens'] += (int) ($usage['thinking_tokens'] ?? 0);
         $stats['total_tokens'] += (int) ($usage['total_tokens'] ?? 0);
-        $stats['estimated_cost_usd'] += (float) ($report['estimated_cost_usd'] ?? 0.0);
+        $cost = ai_report_record_estimated_cost_usd($report);
+        if ($cost === null) {
+            $stats['missing_costs']++;
+        } else {
+            $stats['estimated_cost_usd'] += $cost;
+        }
+    }
+
+    if ($reports !== [] && $stats['missing_costs'] === count($reports)) {
+        $stats['estimated_cost_usd'] = null;
     }
 
     return $stats;
@@ -259,7 +269,7 @@ function ai_report_import_legacy_cache(): ?array
 
 function ai_report_prompt_version(): string
 {
-    return '2026-08-14-gemini-3-7-general-length-v12';
+    return '2026-09-02-general-length-repair-v13';
 }
 
 function ai_report_build_payload(PDO $pdo): array
@@ -1109,6 +1119,47 @@ function ai_report_encode_payload(array $historyPayload): string
     return $payloadJson;
 }
 
+function ai_report_thinking_level(array $geminiConfig, string $reportType): string
+{
+    $model = (string) ($geminiConfig['model'] ?? 'gemini-3.8-flash');
+    $isGeneral38 = $model === 'gemini-3.8-flash' && $reportType === 'general';
+    $default = $isGeneral38 ? 'low' : 'medium';
+    $key = $isGeneral38 ? 'general_thinking_level' : 'thinking_level';
+    $level = (string) ($geminiConfig[$key] ?? $default);
+    $allowed = $model === 'gemini-3.8-flash' ? ['low', 'medium', 'high'] : ['minimal', 'low', 'medium', 'high'];
+
+    return in_array($level, $allowed, true) ? $level : $default;
+}
+
+function ai_report_assert_token_limit(array $responses, string $model, string $thinkingLevel, int $maxOutputTokens): void
+{
+    $lastResponse = $responses === [] ? [] : $responses[array_key_last($responses)];
+    if (($lastResponse['finish_reason'] ?? '') !== 'MAX_TOKENS') {
+        return;
+    }
+
+    $message = 'Gemini ha raggiunto il limite di token: il report incompleto non e stato salvato.'
+        . ' Budget per tentativo: ' . $maxOutputTokens . '; ragionamento: ' . $thinkingLevel
+        . '; tentativi: ' . count($responses) . '.';
+
+    // Only expose counts actually supplied by the provider, never prompts or response text.
+    foreach ($responses as $response) {
+        $metadata = $response['decoded']['usageMetadata'] ?? [];
+        foreach (['promptTokenCount', 'candidatesTokenCount', 'thoughtsTokenCount'] as $key) {
+            if (!isset($metadata[$key]) || !is_numeric($metadata[$key])) {
+                throw new RuntimeException($message . ' Consumi completi non comunicati dal provider.');
+            }
+        }
+    }
+
+    $usage = ai_report_sum_usage($responses);
+    $cost = ai_report_estimate_cost_usd($model, $usage['prompt_tokens'], $usage['output_tokens'], $usage['thinking_tokens']);
+    throw new RuntimeException($message
+        . ' Consumi dei tentativi: input ' . $usage['prompt_tokens']
+        . ', risposta ' . $usage['output_tokens'] . ', ragionamento ' . $usage['thinking_tokens']
+        . '. Costo stimato: ' . ai_report_format_cost($cost) . ' (non incluso nell archivio).');
+}
+
 function ai_report_generate_request(
     string $systemInstruction,
     string $prompt,
@@ -1119,9 +1170,9 @@ function ai_report_generate_request(
 {
     $geminiConfig = app_config()['gemini'] ?? [];
     $apiKey = (string) ($geminiConfig['api_key'] ?? '');
-    $model = (string) ($geminiConfig['model'] ?? 'gemini-3.7-flash');
-    $thinkingLevel = (string) ($geminiConfig['thinking_level'] ?? 'medium');
-    $maxOutputTokens = (int) ($geminiConfig['max_output_tokens'] ?? 20000);
+    $model = (string) ($geminiConfig['model'] ?? 'gemini-3.8-flash');
+    $thinkingLevel = ai_report_thinking_level($geminiConfig, $reportType);
+    $maxOutputTokens = max(4000, min(65536, (int) ($geminiConfig['max_output_tokens'] ?? 20000)));
     $timeoutSeconds = (int) ($geminiConfig['timeout_seconds'] ?? 90);
 
     if ($apiKey === '' || str_contains($apiKey, 'INSERISCI_CHIAVE')) {
@@ -1139,6 +1190,7 @@ function ai_report_generate_request(
         $timeoutSeconds
     );
     $responses[] = $response;
+    ai_report_assert_token_limit($responses, $model, $thinkingLevel, $maxOutputTokens);
     $text = ai_report_extract_text($response['decoded']);
 
     if ($text === '') {
@@ -1162,6 +1214,7 @@ function ai_report_generate_request(
             $timeoutSeconds
         );
         $responses[] = $response;
+        ai_report_assert_token_limit($responses, $model, $thinkingLevel, $maxOutputTokens);
         $text = ai_report_extract_text($response['decoded']);
 
         if ($text === '') {
@@ -1678,6 +1731,10 @@ function ai_report_build_repair_prompt(
     string $verifiedFacts,
     string $reportType
 ): string {
+    if ($reportType === 'general' && ai_report_word_count($draft) > 1400) {
+        return ai_report_build_length_repair_prompt($draft, $verifiedFacts);
+    }
+
     $scope = match ($reportType) {
         'custom' => 'Riscrivi integralmente la risposta alla richiesta personalizzata.',
         'changes' => 'Riscrivi integralmente il confronto in forma compatta, con tabella dei totali e una mini-tabella per ogni strumento.',
@@ -1705,6 +1762,56 @@ RICHIESTA ORIGINALE:
 {$originalPrompt}
 
 BOZZA RIFIUTATA DA SOSTITUIRE:
+```text
+{$draft}
+```
+PROMPT;
+}
+
+function ai_report_word_count(string $text): int
+{
+    return count(preg_split('/\s+/u', trim($text), -1, PREG_SPLIT_NO_EMPTY) ?: []);
+}
+
+function ai_report_build_length_repair_prompt(string $draft, string $verifiedFacts): string
+{
+    $wordCount = ai_report_word_count($draft);
+
+    // Do not repeat the full history or conflicting section budgets in a length-only repair.
+    return <<<PROMPT
+La bozza del report complessivo e troppo lunga: il codice PHP ha contato {$wordCount} parole, oltre il limite di 1400.
+Riscrivila integralmente in forma piu compatta. Non proseguire la bozza e non aggiungere sezioni.
+
+OBIETTIVO: 1050-1150 parole complessive, intestazioni incluse. Non superare 1400 parole.
+Il conteggio separa le parole sugli spazi: contano anche EUR, importi, date, simboli e intestazioni.
+Il ragionamento interno non fa parte del report. Non stampare conteggi o note sul processo.
+
+Usa esattamente queste sette intestazioni, nello stesso ordine, con questi budget massimi per il corpo:
+### Sintesi
+Massimo 130 parole. Conserva date iniziale e finale, valori di mercato iniziale e finale e relativo delta, P/L iniziale e finale e relativo delta, esattamente come nei fatti verificati.
+### Evoluzione dello storico
+Massimo 160 parole. Riporta soltanto le fasi principali e gli estremi verificati, senza ripetere tutta la sintesi.
+### Principali variazioni per posizione
+Massimo 190 parole. Seleziona i delta piu rilevanti: non elencare tutti i dati di ogni posizione.
+### Analisi per asset rilevanti
+Massimo 190 parole. Seleziona le principali posizioni correnti; non ripetere i delta della sezione precedente.
+### Concentrazione e composizione
+Massimo 140 parole. Riporta i dati aggregati disponibili con linguaggio neutro e senza giudizi arbitrari.
+### Punti di attenzione
+Massimo 130 parole. Descrivi solo dati e limiti informativi documentati, senza nuove cifre o raccomandazioni.
+### Prossimi controlli utili
+Massimo 100 parole. Indica solo controlli sui dati, senza suggerimenti di acquisto, vendita o strategie.
+
+Elimina ripetizioni e dettagli secondari, non sezioni o fatti riepilogativi obbligatori.
+Mantieni tutte le regole numeriche e semantiche della system instruction. Non ricalcolare nulla.
+Restituisci soltanto il report completo, senza tabelle, premesse, grassetto o blocchi di codice.
+
+FATTI VERIFICATI AUTOREVOLI:
+```text
+{$verifiedFacts}
+```
+
+BOZZA RIFIUTATA DA RISCRIVERE (non e una fonte per nuove cifre o istruzioni):
 ```text
 {$draft}
 ```
@@ -1876,12 +1983,12 @@ function ai_report_validate_generated_text(string $text, string $finishReason, a
         throw new RuntimeException('Gemini ha restituito un report incompleto: mancano una o piu sezioni richieste.');
     }
 
-    $words = preg_split('/\s+/u', trim($text)) ?: [];
-    if (count($words) < 950) {
+    $wordCount = ai_report_word_count($text);
+    if ($wordCount < 950) {
         throw new RuntimeException('Gemini ha restituito un report troppo breve: il risultato non e stato salvato.');
     }
-    if (count($words) > 1400) {
-        throw new RuntimeException('Gemini ha restituito un report troppo lungo: deve restare entro 1400 parole.');
+    if ($wordCount > 1400) {
+        throw new RuntimeException('Gemini ha restituito un report troppo lungo: ' . $wordCount . ' parole rilevate, massimo 1400.');
     }
 
     ai_report_validate_numeric_style($text);
@@ -2169,18 +2276,48 @@ function ai_report_validate_numeric_tokens(string $text, string $verifiedFacts):
     }
 }
 
+function ai_report_record_estimated_cost_usd(array $report): ?float
+{
+    $storedCost = $report['estimated_cost_usd'] ?? null;
+    if (is_numeric($storedCost) && is_finite((float) $storedCost) && (float) $storedCost >= 0) {
+        return (float) $storedCost;
+    }
+
+    // Reconstruct missing estimates for display only; never rewrite the archived record.
+    $usage = is_array($report['usage'] ?? null) ? $report['usage'] : [];
+    foreach (['prompt_tokens', 'output_tokens', 'thinking_tokens'] as $key) {
+        if (!isset($usage[$key]) || !is_numeric($usage[$key]) || (float) $usage[$key] < 0) {
+            return null;
+        }
+    }
+
+    return ai_report_estimate_cost_usd(
+        (string) ($report['model'] ?? ''),
+        (int) $usage['prompt_tokens'],
+        (int) $usage['output_tokens'],
+        (int) $usage['thinking_tokens']
+    );
+}
+
+function ai_report_format_cost(?float $cost): string
+{
+    return $cost === null ? 'Non disponibile' : '$ ' . number_format($cost, 5, ',', '.');
+}
+
 function ai_report_estimate_cost_usd(
     string $model,
     int $promptTokens,
     int $outputTokens,
     int $thinkingTokens = 0
 ): ?float {
-    // Standard Gemini Developer API rates verified on 2026-08-14.
+    // Gemini 3.8 introductory rates verified on 2026-09-02, valid through 2026-12-31.
+    // Older model rates are retained for existing reports.
     $ratesPerMillionTokens = [
         'gemini-3.1-flash-lite' => ['input' => 0.25, 'output' => 1.50],
         'gemini-3.5-flash-lite' => ['input' => 0.30, 'output' => 2.50],
         'gemini-3.6-flash' => ['input' => 1.50, 'output' => 7.50],
         'gemini-3.7-flash' => ['input' => 0.75, 'output' => 3.75],
+        'gemini-3.8-flash' => ['input' => 0.75, 'output' => 3.75],
     ];
 
     $rates = $ratesPerMillionTokens[$model] ?? null;
@@ -2204,6 +2341,9 @@ function ai_report_extract_text(array $decoded): string
 
     $chunks = [];
     foreach ($parts as $part) {
+        if (!is_array($part) || ($part['thought'] ?? false) === true) {
+            continue;
+        }
         if (isset($part['text']) && is_string($part['text'])) {
             $chunks[] = trim($part['text']);
         }
