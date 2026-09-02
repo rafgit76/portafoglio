@@ -20,7 +20,7 @@ $config = [
         'base_path' => $env('PORTFOLIO_BASE_PATH', '/apps/portafoglio'),
         'default_currency' => 'EUR',
         'target_php_version' => '8.4',
-        'app_version' => '2.7.1',
+        'app_version' => '2.7.4',
         'public_app_name' => 'Portfolio Investimenti',
         'timezone' => 'Europe/Rome',
         'upload_max_size_mb' => 10,
@@ -34,8 +34,10 @@ $config = [
     ],
     'gemini' => [
         'api_key' => $env('PORTFOLIO_GEMINI_API_KEY', ''),
-        'model' => $env('PORTFOLIO_GEMINI_MODEL', 'gemini-3.7-flash'),
+        'model' => $env('PORTFOLIO_GEMINI_MODEL', 'gemini-3.8-flash'),
         'thinking_level' => $env('PORTFOLIO_GEMINI_THINKING_LEVEL', 'medium'),
+        // Applies only to the general portfolio report with Gemini 3.8 Flash.
+        'general_thinking_level' => $env('PORTFOLIO_GEMINI_GENERAL_THINKING_LEVEL', 'low'),
         'max_output_tokens' => (int) $env('PORTFOLIO_GEMINI_MAX_OUTPUT_TOKENS', 20000),
         'timeout_seconds' => (int) $env('PORTFOLIO_GEMINI_TIMEOUT_SECONDS', 90),
     ],
