@@ -2,6 +2,27 @@
 
 return [
     [
+        'version' => '2.8.0',
+        'date' => '2026-09-03',
+        'title' => 'Andamento patrimonio: Excel e PDF',
+        'changes' => [
+            'Esportazione dell intero archivio in Excel con tre fogli: riepilogo degli estremi, patrimonio, saldi e credito; date e importi numerici, filtri e dati mancanti vuoti.',
+            'Nuova vista Stampa PDF con grafici separati, stile blu e giallo, patrimonio netto in evidenza, massimi e minimi datati e tabelle su pagine A4 numerate.',
+            'Gli export includono tutto lo storico, non solo la pagina corrente. Credito separato, protezione PIN e formule patrimoniali esistenti invariati.',
+            'Nessuna migrazione, modifica agli snapshot o chiamata AI.',
+        ],
+    ],
+    [
+        'version' => '2.7.5',
+        'date' => '2026-09-03',
+        'title' => 'Conferma eliminazione report senza sovrapposizioni',
+        'changes' => [
+            'L archivio AI usa una sola finestra di conferma, esterna alla tabella e con titolo e data del report selezionato.',
+            'Aggiunti Annulla, chiusura con Esc e protezione dal doppio invio; senza JavaScript la conferma resta nella riga senza sovrapporsi.',
+            'Nessuna modifica alla generazione AI, agli snapshot o ai controlli di sicurezza dell eliminazione.',
+        ],
+    ],
+    [
         'version' => '2.7.4',
         'date' => '2026-09-02',
         'title' => 'Ragionamento dedicato al complessivo del portafoglio',

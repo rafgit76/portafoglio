@@ -1,6 +1,59 @@
 (() => {
     'use strict';
 
+    const deleteDialog = document.getElementById('ai-delete-dialog');
+    const deleteForm = document.getElementById('ai-delete-form');
+    const deleteCancel = document.getElementById('ai-delete-cancel');
+    const deleteLabel = document.getElementById('ai-delete-report');
+    const deleteDetails = document.querySelectorAll('.ai-archive-delete');
+
+    // Keep the confirmation outside the scrolling table, without changing the POST handler.
+    if (deleteDialog && typeof deleteDialog.showModal === 'function' && deleteForm && deleteCancel && deleteLabel) {
+        let deleteTrigger = null;
+        const deleteSubmit = deleteForm.querySelector('button[type="submit"]');
+
+        deleteDetails.forEach((details) => {
+            const summary = details.querySelector('summary');
+            const sourceForm = details.querySelector('form');
+            summary.addEventListener('click', (event) => {
+                event.preventDefault();
+                if (deleteDialog.open || deleteForm.dataset.submitting === '1') {
+                    return;
+                }
+                deleteDetails.forEach((item) => { item.open = false; });
+                deleteTrigger = summary;
+                ['csrf_token', 'action', 'report_id'].forEach((name) => {
+                    deleteForm.elements.namedItem(name).value = sourceForm.elements.namedItem(name).value;
+                });
+                deleteLabel.textContent = details.dataset.reportLabel;
+                deleteDialog.showModal();
+                deleteCancel.focus();
+            });
+        });
+
+        deleteCancel.addEventListener('click', () => deleteDialog.close());
+        deleteDialog.addEventListener('click', (event) => {
+            const bounds = deleteDialog.getBoundingClientRect();
+            if (event.target === deleteDialog && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) {
+                deleteDialog.close();
+            }
+        });
+        deleteDialog.addEventListener('close', () => {
+            deleteForm.reset();
+            deleteForm.dataset.submitting = '0';
+            deleteSubmit.disabled = false;
+            deleteTrigger?.focus();
+        });
+        deleteForm.addEventListener('submit', (event) => {
+            if (deleteForm.dataset.submitting === '1') {
+                event.preventDefault();
+                return;
+            }
+            deleteForm.dataset.submitting = '1';
+            deleteSubmit.disabled = true;
+        });
+    }
+
     const overlay = document.getElementById('ai-generation-overlay');
     const dialog = overlay?.querySelector('.ai-generation-dialog');
     const indicator = document.getElementById('ai-generation-indicator');

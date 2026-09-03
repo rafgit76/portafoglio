@@ -5,7 +5,21 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `2.7.4`
+- `2.8.0`
+
+Export patrimonio v2.8.0:
+- account_history.php aggiunge Excel e vista Stampa PDF sullo storico completo, senza modificare query, snapshot o migrazioni;
+- lib/account_history_export.php riutilizza le rettifiche gia presenti, fornisce riepiloghi con pari merito e workbook numerici su tre fogli;
+- partials/account_history_print.php e assets/account-history-export.css/js: PDF via stampa browser, A4 blu/giallo, netto prioritario, saldi/credito separati, grafici locali e tabelle paginate;
+- export dietro il bootstrap/PIN esistente; nessuna chiamata AI, nessuna scrittura sul DB, nessuna nuova dipendenza;
+- test sintetici di formule, null, vecchi payload, pari merito, XLSX riletto, PDF multipagina e viewport desktop/mobile superati;
+- pubblicata il 03/09/2026 tramite Pubblica Portafoglio.cmd: nove file verificati byte per byte e pagina iniziale raggiungibile, come da esito condiviso dall utente;
+- verificati gli export reali: PDF A4 di quattro pagine e XLSX di tre fogli, 13 snapshot dal 20/08/2026 al 03/09/2026; valori coincidenti al centesimo, rettifiche, estremi e impaginazione coerenti. Nessuna modifica ai file esportati o al database.
+
+Archivio AI v2.7.5:
+- conferma eliminazione in un unico dialog nativo fuori dalla tabella, con report e data identificabili, Annulla ed Esc;
+- fallback senza JavaScript nella riga, senza riquadri assoluti sovrapposti;
+- POST, CSRF, controllo PIN, archivio e generazione invariati; nessuna migrazione.
 
 Complessivo portafoglio v2.7.4:
 - autorizzato dall utente Low solo per `general` con Gemini 3.8 Flash; gli altri report restano Medium, limite per tentativo 20000 invariato;
@@ -401,6 +415,16 @@ Quando si lavora in questo thread:
 - non proporre autenticazione come default
 
 ## Prossimo uso consigliato
+
+Pubblicazione locale assistita (03/09/2026):
+- `Configura Pubblicazione.cmd`, `Anteprima Pubblicazione.cmd`, `Pubblica Portafoglio.cmd`; guida in `deploy/README.md`.
+- WinSCP FTPS esplicito, certificato verificato, credenziali DPAPI in LocalAppData fuori dal repository; nessun segreto nei comandi o nel pacchetto.
+- host TLS `ftplnx02.aruba.it`: verificato il 03/09/2026 sugli stessi IP di `ftp.raffimac.it`; percorso `/www.raffimac.it/apps/portafoglio`. Ricontrollare in caso di cambio infrastruttura Aruba.
+- upload solo dopo anteprima e conferma `PUBBLICA`, allowlist codice, backup reale prima della sostituzione, staging e rilettura SHA-256, VERSION ultima, controllo HTTPS della home.
+- storage/config privato/SQL esclusi; niente cancellazioni o rollback automatici. Migrazioni manuali con verifica esplicita, mai eseguite dal publisher.
+- strumenti locali soltanto: nessuna migrazione o incremento della versione web per questa funzione.
+- verificati test unitari e FTPS loopback con dati fittizi; configurazione utente completata e accesso Aruba autenticato verificato in sola lettura il 03/09/2026. L utente ha poi confermato e completato la prima pubblicazione della 2.7.5 e quella della 2.8.0.
+- corretta la disconnessione in anteprima: eliminate richieste metadati duplicate, aggiunti tentativi limitati alle letture e avanzamento per file. Anteprima iniziale su 42 file; le 30 differenze osservate erano esclusivamente CRLF/LF. Entrambe le pubblicazioni sono terminate con verifica dei file e raggiungibilita della home; controlli protetti dal PIN eseguiti separatamente dall utente.
 
 Questo documento va aggiornato quando cambiano:
 - struttura progetto

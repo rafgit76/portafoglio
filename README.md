@@ -2,7 +2,18 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.7.4`
+Versione corrente: `2.8.0`
+
+## Export andamento patrimonio
+
+In **Conto > Andamento patrimonio** sono disponibili **Esporta Excel** e **Stampa PDF** quando esiste almeno uno snapshot patrimoniale. Entrambi comprendono tutto l'archivio, indipendentemente dalla pagina visualizzata.
+
+- Excel: tre fogli (Riepilogo, Patrimonio, Saldi e credito), importi e date numerici, filtri, intestazioni congelate, estremi e pari merito evidenziati. I dati mancanti restano celle vuote.
+- PDF: anteprima dedicata A4 con stile blu/giallo, grafici locali Chart.js, massimo e minimo del netto e dei saldi, archivio completo su pagine numerate. Premi **Stampa / Salva PDF** e scegli **Salva come PDF** nel browser; usa A4, scala 100%, senza intestazioni/pie di pagina aggiuntivi del browser.
+- Il netto rettificato resta patrimonio Fineco meno credito disponibile; in assenza del credito le rettifiche restano N/D. I saldi e il credito sono separati e le variazioni di valore non sono rendimenti.
+- Lettura soltanto, protetta dal PIN esistente: nessun dato storico modificato, nessuna migrazione, servizio PDF esterno o chiamata AI. PhpSpreadsheet e Chart.js sono quelli gia inclusi nell'app.
+
+Test locali senza database: `php tests/account_history_export_test.php` (estensioni mbstring, zip e gd), `node tests/account_history_export_ui_test.cjs` (Playwright, PHP_BIN e BROWSER_BIN; su Windows PHP_TEST_EXT_DIR puo indicare la cartella ext di PHP).
 
 ## Credit Lombard e trasferimenti interni documentati
 
@@ -26,11 +37,11 @@ Per aggiornare il confronto al rateo Fineco, dopo il backup importa una volta `s
 
 ## Deploy (FTP)
 
-Carica tutto in:
+Per aggiornare l'installazione esistente usa **Pubblica Portafoglio.cmd**: prepara il pacchetto, controlla PHP, confronta i file del server e mostra l'anteprima. Carica soltanto dopo aver scritto `PUBBLICA`, con backup locale e verifica SHA-256. Non modifica storage, credenziali private o database e non cancella file remoti.
 
-`www.raffimac.it/apps/portafoglio`
+Prima configurazione: **Configura Pubblicazione.cmd**, poi **Anteprima Pubblicazione.cmd** per una prova in sola lettura. Inserire la password soltanto nel prompt locale Windows. Percorso remoto vincolato: `/www.raffimac.it/apps/portafoglio`. Guida completa, limiti e recupero: [deploy/README.md](deploy/README.md).
 
-## Setup rapido
+## Setup rapido (solo prima installazione)
 
 1. Esegui `composer install --no-dev --optimize-autoloader` in locale e carica anche `vendor/`.
 2. Importa `sql/schema.sql` nel tuo DB Aruba.
@@ -43,7 +54,7 @@ Per creare una cartella FTP completa e pulita puoi eseguire:
 
 `.\build_deploy.ps1`
 
-Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto, includendo `vendor/` ma lasciando fuori `.git`, file di sviluppo, cache, credenziali locali, upload storici e archivio dei report AI. Le cartelle `storage/uploads` e `storage/ai_reports` non sono nemmeno ricreate vuote nel pacchetto. Usa `./build_deploy.ps1 -IncludeLocalConfig` soltanto per una prima installazione controllata.
+Lo script crea una cartella `portafoglio_ftp_YYYYMMDD_HHMM` accanto al progetto, includendo `vendor/` ma lasciando fuori `.git`, file di sviluppo/pubblicazione, cache, credenziali locali, upload storici e archivio dei report AI. Le cartelle `storage/uploads` e `storage/ai_reports` non sono nemmeno ricreate vuote nel pacchetto. `-IncludeLocalConfig` viene rifiutato: la configurazione privata non deve entrare nei pacchetti.
 
 Durante l'upload con FileZilla, trasferisci i file del pacchetto nella cartella dell'app senza eliminare o sincronizzare in modo distruttivo `storage/` sul server. Le cartelle di storage vengono create automaticamente dall'app alla prima necessita.
 
@@ -78,7 +89,7 @@ In `config/config.local.php` puoi regolare:
 - `dashboard.php`: dashboard completa del portafoglio
 - `upload.php`: import separato del portafoglio e, facoltativamente, dell'export Patrimonio Fineco
 - `account.php`: patrimonio, saldi, liquidita, riconciliazione e snapshot manuali opzionali
-- `account_history.php`: archivio patrimoniale paginato, estremi storici e grafici separati di patrimonio e saldi
+- `account_history.php`: archivio patrimoniale paginato, estremi storici, grafici e export completo Excel (`?export=xlsx`) / stampa PDF (`?export=pdf`)
 - `credit_lines.php`: gestione separata di fidi e linee di credito
 - `dossiers.php`: integrazione manuale di posizioni in dossier non esportati
 - `snapshots.php`: storico snapshot paginato, con massimo/minimo P/L evidenziati sull'intero archivio
@@ -124,6 +135,8 @@ Il modello predefinito e' `gemini-3.8-flash`, configurabile con `PORTFOLIO_GEMIN
 Per aggiornare un'installazione esistente, completare prima i report di confronto con il 3.7 e preservare `storage/`, database e configurazione privata. Se `config/config.local.php` contiene `gemini.model`, cambiare solo quel valore in `gemini-3.8-flash`: la configurazione locale ha precedenza sul valore predefinito e sulle variabili d'ambiente. Non sostituire API key, PIN o credenziali del database con i file sample. Nessuna migrazione SQL richiesta. Verificare il modello nella pagina Report AI prima di generare nuovi report. Per tornare al 3.7 basta ripristinare il valore del modello; i report archiviati mantengono modello e consumi originali.
 
 Test locali senza chiamate API: `php tests/ai_report_model_test.php` e `php tests/account_tracker_logic_test.php`.
+
+Test UI dell archivio: `node tests/ai_report_archive_ui_test.cjs` con Playwright disponibile, `PHP_BIN` e, se necessario, `BROWSER_BIN` configurati. Usa report fittizi e un server locale temporaneo, senza leggere l archivio o eliminare report reali. Verifica desktop/mobile, conferma unica, Annulla/Esc, focus, POST con ID/CSRF, doppio invio, fallback senza JavaScript e overlay della generazione.
 
 Correzione v2.7.3: le stime mancanti nei report precedenti vengono ricostruite soltanto in lettura, se modello e consumi input/risposta/ragionamento sono noti. Valori archiviati validi (anche zero) non vengono sostituiti; se non si puo stimare il costo, si mostra `Non disponibile`. Nessuna riscrittura dell'archivio e nessuna nuova chiamata API per aggiornare la visualizzazione. I totali con stime mancanti sono parziali.
 

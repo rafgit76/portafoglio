@@ -4,6 +4,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+if ($IncludeLocalConfig) {
+    throw 'La configurazione privata non puo essere inclusa nei pacchetti FTP.'
+}
+
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectParent = Split-Path -Parent $projectRoot
 $timestamp = Get-Date -Format 'yyyyMMdd_HHmm'
@@ -20,6 +24,8 @@ $excludeDirs = @(
     (Join-Path $projectRoot 'storage\ai_reports'),
     (Join-Path $projectRoot 'storage\uploads'),
     (Join-Path $projectRoot 'tests'),
+    (Join-Path $projectRoot 'deploy'),
+    (Join-Path $projectRoot 'deploy-state'),
     (Join-Path $projectRoot 'tmp')
 )
 
@@ -29,16 +35,15 @@ $excludeFiles = @(
     'README.md',
     'THREAD_MASTER.md',
     'build_deploy.ps1',
+    'publish.ps1',
+    '*.cmd',
+    '*.clixml',
     'composer.json',
     'composer.lock',
     'ai_report_cache.json',
     'privacy_attempts.json',
     'config.local.php'
 )
-
-if ($IncludeLocalConfig) {
-    $excludeFiles = $excludeFiles | Where-Object { $_ -ne 'config.local.php' }
-}
 
 $robocopyArgs = @(
     $projectRoot,
