@@ -1859,10 +1859,8 @@ tbody tr.snapshot-row-min:hover {
 }
 
 .ai-archive-delete form {
-    position: absolute;
-    z-index: 20;
-    top: calc(100% + 0.45rem);
-    right: 0;
+    position: static;
+    margin-top: 0.45rem;
     width: 235px;
     padding: 0.75rem;
     border: 1px solid #efb3bd;
@@ -1879,7 +1877,8 @@ tbody tr.snapshot-row-min:hover {
     white-space: normal;
 }
 
-.ai-archive-delete .btn-danger {
+.ai-archive-delete .btn-danger,
+.ai-delete-dialog .btn-danger {
     min-height: 34px;
     padding: 0.42rem 0.62rem;
     border: 1px solid #d24053;
@@ -1890,8 +1889,52 @@ tbody tr.snapshot-row-min:hover {
     font-weight: 700;
 }
 
-.ai-archive-delete .btn-danger:hover {
+.ai-archive-delete .btn-danger:hover,
+.ai-delete-dialog .btn-danger:hover {
     background: #ffe5e9;
+}
+
+.ai-delete-dialog {
+    width: min(460px, calc(100% - 2rem));
+    max-height: calc(100dvh - 2rem);
+    margin: auto;
+    padding: 1.4rem;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow);
+    overflow-wrap: anywhere;
+}
+
+.ai-delete-dialog:not([open]) {
+    display: none;
+}
+
+.ai-delete-dialog::backdrop {
+    background: rgba(15, 31, 41, 0.55);
+}
+
+.ai-delete-dialog h2 {
+    margin: 0 0 0.8rem;
+    font-size: 1.25rem;
+}
+
+#ai-delete-report {
+    font-weight: 700;
+}
+
+.ai-delete-dialog p {
+    margin: 0 0 1rem;
+    line-height: 1.5;
+}
+
+.ai-delete-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.6rem;
 }
 
 .ai-type-account_general {
@@ -2869,6 +2912,11 @@ tbody tr.snapshot-row-min:hover {
     gap: 0.55rem;
     flex-wrap: wrap;
     margin-top: 0.9rem;
+}
+
+.account-history-hero .panel-head,
+.account-history-hero .actions-inline {
+    flex-wrap: wrap;
 }
 
 .export-btn {

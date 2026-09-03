@@ -726,7 +726,7 @@ include __DIR__ . '/partials/header.php';
                         <td>
                             <div class="ai-archive-actions">
                                 <a class="ai-open-link" href="<?= e(app_base_path()) ?>/ai_report_view.php?id=<?= e(rawurlencode((string) $report['id'])) ?>">Apri</a>
-                                <details class="ai-archive-delete">
+                                <details class="ai-archive-delete" name="ai-archive-delete" data-report-label="<?= e((string) ($report['title'] ?? 'Report AI') . ' - ' . $generatedLabel) ?>">
                                     <summary>Elimina</summary>
                                     <form method="post">
                                         <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
@@ -745,6 +745,22 @@ include __DIR__ . '/partials/header.php';
         </div>
     <?php endif; ?>
 </section>
+
+<dialog class="ai-delete-dialog" id="ai-delete-dialog" aria-labelledby="ai-delete-title" aria-describedby="ai-delete-message ai-delete-report">
+    <h2 id="ai-delete-title">Elimina report</h2>
+    <p id="ai-delete-report"></p>
+    <p id="ai-delete-message">Eliminare solo questo report archiviato? L'operazione non modifica gli snapshot e non puo essere annullata.</p>
+    <form method="post" id="ai-delete-form">
+        <input type="hidden" name="csrf_token" value="">
+        <input type="hidden" name="action" value="delete_report">
+        <input type="hidden" name="report_id" value="">
+        <input type="hidden" name="confirmed" value="1">
+        <div class="ai-delete-buttons">
+            <button type="button" class="btn btn-secondary" id="ai-delete-cancel" autofocus>Annulla</button>
+            <button type="submit" class="btn-danger">Conferma elimina</button>
+        </div>
+    </form>
+</dialog>
 
 <section class="panel ai-prompt-panel">
     <div class="panel-head">

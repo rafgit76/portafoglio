@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/lib/account_tracker.php';
+require_once __DIR__ . '/lib/account_history_export.php';
 
 $pageTitle = 'Andamento patrimonio';
 $pdo = db();
@@ -39,24 +40,37 @@ $historyStatement = $pdo->query(
 );
 $history = $historyStatement->fetchAll();
 
-foreach ($history as &$row) {
-    $positionPortfolio = $row['portfolio_market_value'] !== null ? (float) $row['portfolio_market_value'] : null;
-    $portfolioValue = account_tracker_snapshot_decimal($row, 'fineco_portfolio_total') ?? $positionPortfolio;
-    $creditAvailable = account_tracker_snapshot_decimal($row, 'credit_available_amount');
-    $adjustments = account_tracker_patrimonial_adjustments([
-        'fineco_total_assets' => account_tracker_snapshot_decimal($row, 'fineco_total_assets'),
-        'liquidity_total' => account_tracker_snapshot_decimal($row, 'liquidity_total'),
-        'credit_available_amount' => $creditAvailable,
-    ]);
-    $wealth = account_tracker_reconstructed_wealth($portfolioValue, $adjustments['own_liquidity_adjusted'], null);
+$history = account_history_prepare($history);
 
-    $row['portfolio_market_value_num'] = $portfolioValue;
-    $row['portfolio_position_value_num'] = $positionPortfolio;
-    $row['own_liquidity_adjusted_num'] = $adjustments['own_liquidity_adjusted'];
-    $row['reconstructed_gross_num'] = $wealth['gross'];
-    $row['net_adjusted_num'] = $adjustments['net_assets_adjusted'];
+if ($history !== [] && in_array($_GET['export'] ?? '', ['xlsx', 'pdf'], true)) {
+    $report = account_history_export_model($history);
+    if ($_GET['export'] === 'pdf') {
+        include __DIR__ . '/partials/account_history_print.php';
+        exit;
+    }
+    if (!class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class)) {
+        http_response_code(503);
+        exit('Esportazione Excel non disponibile: manca PhpSpreadsheet.');
+    }
+    $book = account_history_export_workbook($report);
+    // Build before sending download headers, so a writer error cannot return a corrupt workbook.
+    $temporary = fopen('php://temp/maxmemory:5242880', 'w+b');
+    try {
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($temporary);
+        rewind($temporary);
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="andamento_patrimonio_' . date('Ymd_His') . '.xlsx"');
+        header('Cache-Control: private, no-store');
+        fpassthru($temporary);
+    } finally {
+        fclose($temporary);
+        $book->disconnectWorksheets();
+    }
+    exit;
 }
-unset($row);
 
 $totalSnapshots = count($history);
 $totalPages = max(1, (int) ceil($totalSnapshots / $pageSize));
@@ -102,7 +116,7 @@ $sameExtreme = static function (?float $value, ?array $extreme): bool {
 
 include __DIR__ . '/partials/header.php';
 ?>
-<section class="panel account-hero">
+<section class="panel account-hero account-history-hero">
     <div class="panel-head">
         <div>
             <p class="eyebrow">ARCHIVIO PATRIMONIALE</p>
@@ -114,6 +128,12 @@ include __DIR__ . '/partials/header.php';
             <a class="btn" href="<?= e(app_base_path()) ?>/upload.php#patrimony-import">Importa patrimonio</a>
         </div>
     </div>
+    <?php if ($history !== []): ?>
+    <div class="andamento-export-actions">
+        <a class="btn export-btn export-btn-excel" href="<?= e(app_base_path()) ?>/account_history.php?export=xlsx"><span class="export-file-icon" aria-hidden="true">XLS</span><span>Esporta Excel</span></a>
+        <a class="btn export-btn export-btn-pdf" href="<?= e(app_base_path()) ?>/account_history.php?export=pdf" target="_blank" rel="noopener"><span class="export-file-icon" aria-hidden="true">PDF</span><span>Stampa PDF</span></a>
+    </div>
+    <?php endif; ?>
 </section>
 
 <?php if ($history === []): ?>

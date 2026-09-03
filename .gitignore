@@ -6,3 +6,6 @@
 !/storage/uploads/.gitkeep
 /vendor/
 /.phpunit.result.cache
+/deploy/*.local.*
+/*.clixml
+/deploy-state/
