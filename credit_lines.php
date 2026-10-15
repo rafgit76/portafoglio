@@ -191,6 +191,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $dossiers = account_tracker_dossiers($pdo);
 $lines = $pdo->query('SELECT c.*, d.name AS dossier_name, c.agreed_amount - c.used_amount AS available_amount FROM pf_credit_lines c LEFT JOIN pf_dossiers d ON d.id=c.dossier_id ORDER BY FIELD(c.status,"ACTIVE","PAUSED","CLOSED"), c.name')->fetchAll();
+$registeredLines = account_tracker_registered_credit_lines($lines, account_tracker_latest_patrimonial_snapshot($pdo));
 $creditLombardLines = array_values(array_filter($lines, static fn(array $line): bool => ($line['credit_type'] ?? '') === 'CREDIT_LOMBARD'));
 $controlHistory = [];
 if ($controlSchemaReady) {
@@ -231,7 +232,43 @@ include __DIR__ . '/partials/header.php';
 <?php endif; ?>
 <label class="checkbox-label"><input type="checkbox" name="allow_over_agreement" value="1"> Confermo un utilizzato superiore all'accordato</label>
 <label class="form-full">Note<textarea name="notes" rows="3"><?= $value('notes') ?></textarea></label><div class="form-full"><button type="submit">Salva linea di credito</button></div></form></section>
-<section class="panel"><h2>Linee registrate</h2><?php if (!$lines): ?><p>Nessuna linea di credito configurata.</p><?php else: ?><table><thead><tr><th>Nome</th><th>Tipo</th><th>Accordato</th><th>Utilizzato</th><th>Disponibile</th><th>Stato</th><th></th></tr></thead><tbody><?php foreach ($lines as $line): $lineProfile = account_tracker_credit_line_profile($line); ?><tr><td><strong><?= e((string) $line['name']) ?></strong><br><span class="tiny-note"><?= e((string) ($line['dossier_name'] ?? '')) ?><?= $profileSchemaReady ? ' - ' . e($lineProfile['data_origin_label']) : '' ?></span></td><td><?= e($lineProfile['credit_line_type']) ?></td><td>EUR <?= number_format((float) $line['agreed_amount'],2,',','.') ?></td><td class="<?= (float) $line['used_amount'] > 0 ? 'neg' : '' ?>">EUR <?= number_format((float) $line['used_amount'],2,',','.') ?></td><td>EUR <?= number_format((float) $line['available_amount'],2,',','.') ?></td><td><?= e($lineProfile['status']) ?></td><td><a class="btn-link" href="<?= e(app_base_path()) ?>/credit_lines.php?edit=<?= (int) $line['id'] ?>">Modifica</a></td></tr><?php endforeach; ?></tbody></table><?php endif; ?></section>
+<section class="panel" id="registered-credit-lines">
+    <h2>Linee registrate</h2>
+    <?php if (!$registeredLines): ?>
+        <p>Nessuna linea di credito configurata.</p>
+    <?php else: ?>
+        <div class="table-wrap"><table>
+            <thead><tr><th>Nome</th><th>Tipo</th><th>Accordato</th><th>Utilizzato</th><th>Disponibile</th><th>Stato</th><th></th></tr></thead>
+            <tbody>
+            <?php foreach ($registeredLines as $line):
+                $lineProfile = account_tracker_credit_line_profile($line);
+                $currentCredit = $line['current_credit'];
+            ?>
+                <tr>
+                    <td><strong><?= e((string) $line['name']) ?></strong><br><span class="tiny-note"><?= e((string) ($line['dossier_name'] ?? '')) ?><?= $profileSchemaReady ? ' - ' . e($lineProfile['data_origin_label']) : '' ?></span></td>
+                    <td><?= e($lineProfile['credit_line_type']) ?></td>
+                    <td>EUR <?= number_format((float) $line['agreed_amount'], 2, ',', '.') ?></td>
+                    <?php foreach (['used' => 'used_amount', 'available' => 'available_amount'] as $kind => $field):
+                        $source = $currentCredit[$kind . '_source'];
+                        $sourceLabel = match ($source) {
+                            'patrimonial_snapshot' => 'Snapshot patrimonio del ',
+                            'calculated_snapshot' => 'Calcolato da snapshot del ',
+                            default => 'Dato registrato',
+                        };
+                        if ($source !== 'registered') {
+                            $sourceLabel .= date('d/m/Y', strtotime($currentCredit['snapshot_date']));
+                        }
+                    ?>
+                    <td class="<?= $kind === 'used' && $currentCredit[$field] > 0 ? 'neg' : '' ?>">EUR <?= number_format($currentCredit[$field], 2, ',', '.') ?><br><span class="tiny-note"><?= e($sourceLabel) ?></span></td>
+                    <?php endforeach; ?>
+                    <td><?= e($lineProfile['status']) ?></td>
+                    <td><a class="btn-link" href="<?= e(app_base_path()) ?>/credit_lines.php?edit=<?= (int) $line['id'] ?>">Modifica</a></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table></div>
+    <?php endif; ?>
+</section>
 <?php if ($creditLombardLines): ?>
 <section class="panel" id="lombard-control">
     <div class="panel-head">

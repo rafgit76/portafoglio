@@ -442,6 +442,57 @@ function account_tracker_credit_lombard_profiles(PDO $pdo): array
     return array_map('account_tracker_credit_line_profile', $rows);
 }
 
+function account_tracker_registered_credit_lines(array $lines, ?array $snapshot): array
+{
+    $finecoLines = [];
+    foreach ($lines as $key => &$line) {
+        $line['current_credit'] = [
+            'used_amount' => (float) $line['used_amount'],
+            'available_amount' => (float) $line['agreed_amount'] - (float) $line['used_amount'],
+            'used_source' => 'registered',
+            'available_source' => 'registered',
+            'snapshot_date' => null,
+        ];
+        $isFineco = strtolower(trim((string) ($line['data_origin'] ?? ''))) === 'fineco_acceptance_letter'
+            || str_starts_with(strtolower(trim((string) ($line['bank_name'] ?? ''))), 'fineco');
+        if ($isFineco && ($line['status'] ?? '') === 'ACTIVE') {
+            $finecoLines[] = $key;
+        }
+    }
+    unset($line);
+
+    // The export gives an aggregate: never allocate it to multiple registered lines.
+    if ($snapshot === null || count($finecoLines) !== 1 || empty($snapshot['snapshot_date'])) {
+        return $lines;
+    }
+    $key = $finecoLines[0];
+    $activationDate = (string) ($lines[$key]['activation_date'] ?? '');
+    if ($activationDate !== '' && (string) $snapshot['snapshot_date'] < $activationDate) {
+        return $lines;
+    }
+    $agreed = account_tracker_snapshot_decimal($snapshot, 'credit_agreed_amount');
+    if ($agreed !== null && abs($agreed - (float) $lines[$key]['agreed_amount']) >= 0.005) {
+        return $lines;
+    }
+    $available = account_tracker_snapshot_decimal($snapshot, 'credit_available_amount');
+    $explicitUsed = account_tracker_snapshot_decimal($snapshot, 'credit_used_amount');
+    $used = account_tracker_effective_credit_used($agreed, $explicitUsed, $available);
+    $current = &$lines[$key]['current_credit'];
+    if ($used !== null) {
+        $current['used_amount'] = $used;
+        $current['used_source'] = $explicitUsed !== null ? 'patrimonial_snapshot' : 'calculated_snapshot';
+    }
+    if ($available !== null) {
+        $current['available_amount'] = $available;
+        $current['available_source'] = 'patrimonial_snapshot';
+    }
+    if ($used !== null || $available !== null) {
+        $current['snapshot_date'] = (string) $snapshot['snapshot_date'];
+    }
+    unset($current);
+    return $lines;
+}
+
 function account_tracker_credit_summary(PDO $pdo, ?string $snapshotDate = null): array
 {
     $empty = ['agreed_amount' => null, 'used_amount' => null, 'available_amount' => null, 'lines_count' => 0];

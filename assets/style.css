@@ -2919,6 +2919,14 @@ tbody tr.snapshot-row-min:hover {
     flex-wrap: wrap;
 }
 
+#registered-credit-lines .table-wrap {
+    overflow-x: auto;
+}
+
+#registered-credit-lines td {
+    white-space: normal;
+}
+
 .export-btn {
     display: inline-flex;
     align-items: center;

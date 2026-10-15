@@ -2,6 +2,16 @@
 
 return [
     [
+        'version' => '2.8.1',
+        'date' => '2026-10-15',
+        'title' => 'Linee registrate: utilizzo corrente dal patrimonio',
+        'changes' => [
+            'Utilizzato e disponibile leggono prioritariamente l ultimo snapshot patrimonio, con fonte e data visibili; i campi assenti usano il dato registrato.',
+            'Accordato e metadati contrattuali della lettera restano invariati. L utilizzato esplicito prevale sul calcolo da accordato e disponibile; nessuna deduzione dal saldo contabile.',
+            'I totali Fineco sono attribuiti solo a una linea attiva univoca e compatibile. Nessuna migrazione o modifica dei dati storici.',
+        ],
+    ],
+    [
         'version' => '2.8.0',
         'date' => '2026-09-03',
         'title' => 'Andamento patrimonio: Excel e PDF',
