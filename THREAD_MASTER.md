@@ -5,7 +5,16 @@
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
 Versione corrente:
-- `2.8.0`
+- `2.8.1`
+
+Linee registrate v2.8.1 (15/10/2026):
+- utilizzato e disponibile sono letti dall ultimo snapshot patrimonio tramite account_tracker_registered_credit_lines; campi mancanti in fallback ai valori registrati;
+- conservati dati contrattuali, accordato e form manuale; la lettura corrente non scrive su DB o storico e non usa i saldi per dedurre il credito;
+- utilizzato esplicito prioritario, altrimenti accordato meno disponibile dello snapshot se entrambi presenti; fonte/data mostrate nella tabella;
+- fido aggregato attribuito solo a una linea Fineco attiva univoca, compatibile con l accordato e con la data di attivazione; piu linee o accordati incompatibili mantengono dati registrati;
+- test sintetico dedicato al caso accordato 12000, utilizzato 3500, disponibile 8500 e alle condizioni di fallback: 31 controlli superati, piu 109 controlli conto, 44 export patrimonio e verifica tabella desktop/mobile; nessuna migrazione;
+- pubblicata su autorizzazione dell utente il 15/10/2026: sei file aggiornati e verificati byte per byte, VERSION 2.8.1 e home raggiungibile; esito verified nel run locale 20261015-082306-f2726715;
+- l utente ha verificato la sezione protetta da PIN: utilizzato e disponibile correnti, fonte e data dello snapshot visibili, accordato contrattuale e stato operativo conservati. Confermata anche la quadratura accordato = utilizzato + disponibile.
 
 Export patrimonio v2.8.0:
 - account_history.php aggiunge Excel e vista Stampa PDF sullo storico completo, senza modificare query, snapshot o migrazioni;

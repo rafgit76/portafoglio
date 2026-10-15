@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.8.0`
+Versione corrente: `2.8.1`
 
 ## Export andamento patrimonio
 
@@ -30,6 +30,10 @@ Non e previsto OCR automatico delle contabili PDF su Aruba: il riferimento al do
 Per aggiornare un database gia alla versione 2.4.0, esporta prima un backup completo e importa una volta `sql/migration_2_5_0_documented_internal_transfers.sql` tramite phpMyAdmin.
 
 Per registrare il profilo ufficiale del rapporto Credit Lombard, dopo il backup importa una volta `sql/migration_2_6_0_credit_lombard_profile.sql`. La migrazione completa la linea di credito con validita, rapporti collegati e provenienza documentale senza modificare snapshot, posizioni o calcoli del portafoglio.
+
+In **Gestione fidi > Linee registrate**, utilizzato e disponibile danno priorita ai campi dell'ultimo snapshot patrimonio successivo o uguale alla data di attivazione. Ogni importo indica la fonte e la data; un campo assente usa il valore registrato nella linea. L'utilizzato esplicito prevale sul calcolo `fido accordato - fido disponibile` dello stesso snapshot. Il saldo contabile non determina l'utilizzo. L'accordato, i rapporti collegati, il tipo, lo stato e gli altri dati della lettera restano quelli contrattuali; la lettura corrente non li salva nuovamente e non modifica il form di gestione.
+
+Il file patrimonio fornisce fidi aggregati: questi valori sono applicati soltanto se esiste una singola linea Fineco attiva e, quando presente, il totale accordato dello snapshot coincide con quello della linea. Con piu linee Fineco attive o un totale diverso, il dettaglio mantiene i valori registrati. Non servono nuove migrazioni. Test mirato: `php tests/credit_lines_current_test.php`.
 
 Per attivare il controllo facoltativo dell export Patrimonio del solo rapporto Credit Lombard, importa una volta `sql/migration_2_7_0_credit_lombard_checks.sql`. Il controllo si trova in **Gestione fidi**, verifica il dossier configurato e confronta il totale del file con il portafoglio Lombard della stessa data. Il file non viene conservato e il controllo non modifica alcuno snapshot.
 
