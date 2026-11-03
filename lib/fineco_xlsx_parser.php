@@ -236,7 +236,7 @@ final class FinecoXlsxParser
             rewind($handle);
             $delimiter = substr_count($sample, ';') >= substr_count($sample, ',') ? ';' : ',';
             $rows = [];
-            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+            while (($row = fgetcsv($handle, 0, $delimiter, '"', '\\')) !== false) {
                 $rows[] = array_map(static function ($value): string {
                     return preg_replace('/^\xEF\xBB\xBF/', '', (string) $value) ?? '';
                 }, $row);

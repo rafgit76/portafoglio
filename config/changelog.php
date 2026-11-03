@@ -2,6 +2,16 @@
 
 return [
     [
+        'version' => '2.8.2',
+        'date' => '2026-11-03',
+        'title' => 'Sicurezza import Excel e compatibilita CSV',
+        'changes' => [
+            'PhpSpreadsheet aggiornata alla versione 2.4.8 per correggere gli avvisi di sicurezza delle versioni precedenti.',
+            'Lettura CSV compatibile con PHP 8.4, conservando il comportamento di escape esistente.',
+            'Nessuna migrazione o modifica ai dati storici.',
+        ],
+    ],
+    [
         'version' => '2.8.1',
         'date' => '2026-10-15',
         'title' => 'Linee registrate: utilizzo corrente dal patrimonio',

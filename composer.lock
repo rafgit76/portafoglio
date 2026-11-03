@@ -2,7 +2,7 @@
   "_readme": [
     "This file locks the dependencies of your project to a known state",
     "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
-    "This file was generated from the currently installed vendor metadata because the local PHP CLI lacks OpenSSL for online Composer resolution."
+    "This file is @generated automatically"
   ],
   "content-hash": "615c6935447cd6df0f8ee95f15c7147f",
   "packages": [
@@ -23,7 +23,6 @@
       "require": {
         "php": "^7.4 || ^8.0"
       },
-      "time": "2024-11-12T16:29:46+00:00",
       "type": "library",
       "autoload": {
         "psr-4": {
@@ -33,7 +32,8 @@
       "license": [
         "MIT"
       ],
-      "description": "PCRE wrapping library that offers type-safe preg_* replacements."
+      "description": "PCRE wrapping library that offers type-safe preg_* replacements.",
+      "time": "2024-11-12T16:29:46+00:00"
     },
     {
       "name": "maennchen/zipstream-php",
@@ -54,7 +54,6 @@
         "ext-zlib": "*",
         "php-64bit": "^8.3"
       },
-      "time": "2026-04-11T18:38:28+00:00",
       "type": "library",
       "autoload": {
         "psr-4": {
@@ -64,7 +63,8 @@
       "license": [
         "MIT"
       ],
-      "description": "ZipStream is a library for dynamically streaming dynamic zip files from PHP without writing to the disk at all on the server."
+      "description": "ZipStream is a library for dynamically streaming dynamic zip files from PHP without writing to the disk at all on the server.",
+      "time": "2026-04-11T18:38:28+00:00"
     },
     {
       "name": "markbaker/complex",
@@ -83,7 +83,6 @@
       "require": {
         "php": "^7.2 || ^8.0"
       },
-      "time": "2022-12-06T16:21:08+00:00",
       "type": "library",
       "autoload": {
         "psr-4": {
@@ -93,7 +92,8 @@
       "license": [
         "MIT"
       ],
-      "description": "PHP Class for working with complex numbers"
+      "description": "PHP Class for working with complex numbers",
+      "time": "2022-12-06T16:21:08+00:00"
     },
     {
       "name": "markbaker/matrix",
@@ -112,7 +112,6 @@
       "require": {
         "php": "^7.1 || ^8.0"
       },
-      "time": "2022-12-02T22:17:43+00:00",
       "type": "library",
       "autoload": {
         "psr-4": {
@@ -122,20 +121,21 @@
       "license": [
         "MIT"
       ],
-      "description": "PHP Class for working with matrices"
+      "description": "PHP Class for working with matrices",
+      "time": "2022-12-02T22:17:43+00:00"
     },
     {
       "name": "phpoffice/phpspreadsheet",
-      "version": "2.4.5",
+      "version": "2.4.8",
       "source": {
         "type": "git",
         "url": "https://github.com/PHPOffice/PhpSpreadsheet.git",
-        "reference": "ec7815be350e03df90f3e2ace92653fa6cb4327c"
+        "reference": "badf4f22c54332046af37687c3384c6a0ed14ae1"
       },
       "dist": {
         "type": "zip",
-        "url": "https://api.github.com/repos/PHPOffice/PhpSpreadsheet/zipball/ec7815be350e03df90f3e2ace92653fa6cb4327c",
-        "reference": "ec7815be350e03df90f3e2ace92653fa6cb4327c",
+        "url": "https://api.github.com/repos/PHPOffice/PhpSpreadsheet/zipball/badf4f22c54332046af37687c3384c6a0ed14ae1",
+        "reference": "badf4f22c54332046af37687c3384c6a0ed14ae1",
         "shasum": ""
       },
       "require": {
@@ -159,17 +159,77 @@
         "php": ">=8.1.0 <8.6.0",
         "psr/simple-cache": "^1.0 || ^2.0 || ^3.0"
       },
-      "time": "2026-04-19T05:48:49+00:00",
+      "require-dev": {
+        "dealerdirect/phpcodesniffer-composer-installer": "dev-main",
+        "dompdf/dompdf": "^2.0 || ^3.0",
+        "friendsofphp/php-cs-fixer": "^3.2",
+        "mitoteam/jpgraph": "^10.5",
+        "mpdf/mpdf": "^8.1.1",
+        "phpcompatibility/php-compatibility": "^9.3",
+        "phpstan/phpstan": "^1.1",
+        "phpstan/phpstan-phpunit": "^1.0",
+        "phpunit/phpunit": "^9.6 || ^10.5",
+        "squizlabs/php_codesniffer": "^3.7",
+        "tecnickcom/tcpdf": "^6.5"
+      },
+      "suggest": {
+        "dompdf/dompdf": "Option for rendering PDF with PDF Writer",
+        "ext-intl": "PHP Internationalization Functions, required for NumberFormatter Wizard",
+        "mitoteam/jpgraph": "Option for rendering charts, or including charts with PDF or HTML Writers",
+        "mpdf/mpdf": "Option for rendering PDF with PDF Writer",
+        "tecnickcom/tcpdf": "Option for rendering PDF with PDF Writer"
+      },
       "type": "library",
       "autoload": {
         "psr-4": {
           "PhpOffice\\PhpSpreadsheet\\": "src/PhpSpreadsheet"
         }
       },
+      "notification-url": "https://packagist.org/downloads/",
       "license": [
         "MIT"
       ],
-      "description": "PHPSpreadsheet - Read, Create and Write Spreadsheet documents in PHP - Spreadsheet engine"
+      "authors": [
+        {
+          "name": "Maarten Balliauw",
+          "homepage": "https://blog.maartenballiauw.be"
+        },
+        {
+          "name": "Mark Baker",
+          "homepage": "https://markbakeruk.net"
+        },
+        {
+          "name": "Franck Lefevre",
+          "homepage": "https://rootslabs.net"
+        },
+        {
+          "name": "Erik Tilt"
+        },
+        {
+          "name": "Adrien Crivelli"
+        },
+        {
+          "name": "Owen Leibman"
+        }
+      ],
+      "description": "PHPSpreadsheet - Read, Create and Write Spreadsheet documents in PHP - Spreadsheet engine",
+      "homepage": "https://github.com/PHPOffice/PhpSpreadsheet",
+      "keywords": [
+        "OpenXML",
+        "excel",
+        "gnumeric",
+        "ods",
+        "php",
+        "spreadsheet",
+        "xls",
+        "xlsx"
+      ],
+      "support": {
+        "issues": "https://github.com/PHPOffice/PhpSpreadsheet/issues",
+        "source": "https://github.com/PHPOffice/PhpSpreadsheet/tree/2.4.8"
+      },
+      "time": "2026-09-17T04:17:53+00:00",
+      "published-time": "2026-09-17T04:23:51+00:00"
     },
     {
       "name": "psr/simple-cache",
@@ -188,7 +248,6 @@
       "require": {
         "php": ">=8.0.0"
       },
-      "time": "2021-10-29T13:26:27+00:00",
       "type": "library",
       "autoload": {
         "psr-4": {
@@ -198,7 +257,8 @@
       "license": [
         "MIT"
       ],
-      "description": "Common interfaces for simple caching"
+      "description": "Common interfaces for simple caching",
+      "time": "2021-10-29T13:26:27+00:00"
     }
   ],
   "packages-dev": [],
@@ -217,5 +277,5 @@
     "ext-zip": "*"
   },
   "platform-dev": {},
-  "plugin-api-version": "2.6.0"
+  "plugin-api-version": "2.11.0"
 }

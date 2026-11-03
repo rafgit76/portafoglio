@@ -4,8 +4,15 @@
 
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
-Versione corrente:
-- `2.8.1`
+Versione corrente locale e online:
+- `2.8.2`
+
+Aggiornamento sicurezza v2.8.2 (03/11/2026):
+- PhpSpreadsheet aggiornata da 2.4.5 a 2.4.8, senza modifiche alle altre dipendenze;
+- lettura CSV con escape esplicito, mantenendo il comportamento precedente su PHP 8.4;
+- nessuna migrazione SQL; pubblicata su Aruba con IncludeDependencies il 03/11/2026;
+- 60 file attivati e verificati byte per byte, VERSION e home verificate; backup locale nel run 20261103-164205-adefcb00;
+- test reali delle funzioni protette dal PIN ancora da effettuare.
 
 Linee registrate v2.8.1 (15/10/2026):
 - utilizzato e disponibile sono letti dall ultimo snapshot patrimonio tramite account_tracker_registered_credit_lines; campi mancanti in fallback ai valori registrati;
