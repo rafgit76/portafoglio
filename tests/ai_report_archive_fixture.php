@@ -45,6 +45,8 @@ $overlayEnd = strpos($source, '<?php', $overlayStart);
 <?php eval('?>' . substr($source, $start, $end - $start)); ?>
 <form method="post" id="account-general-report-form">
     <input type="hidden" name="action" value="generate_account_general">
+    <label class="ai-model-select">Modello per questo report <select name="gemini_model"><option value="gemini-3.8-flash">Gemini 3.8</option><option value="gemini-4-hydrogen">Hydrogen</option></select></label>
+    <label class="ai-model-select">Sforzo di ragionamento <select name="gemini_thinking_level"><option value="">Predefinito</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
     <button type="submit" name="confirmed" value="1">Genera prova</button>
 </form>
 <?= substr($source, $overlayStart, $overlayEnd - $overlayStart) ?>

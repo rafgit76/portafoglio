@@ -2,7 +2,7 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.8.2`.
+Versione corrente: `2.8.4`.
 
 ## Export andamento patrimonio
 
@@ -131,6 +131,8 @@ La pagina `Conto -> Andamento patrimonio` conserva gli snapshot patrimoniali gio
 Per il trasferimento BTP del `20/08/2026`, non modificare lo storico automaticamente. Dopo avere un export del dossier Credit Lombard, importalo selezionando il dossier corretto oppure usa `Dossier e posizioni manuali`: verifica data, quantita, valore di carico e mercato, spunta la conferma. L'app conserva il prima/dopo nel backup logico, ricalcola il consolidato e, se il matching e netto, propone il trasferimento interno da confermare. Nessuna proposta modifica P/L o patrimonio da sola.
 
 ## Report AI
+
+Ogni form di generazione permette di scegliere il modello Gemini e il livello di ragionamento per quel solo report. Il pulsante **Aggiorna elenco modelli** interroga l API Google lato server senza generare report: conserva in sessione i due modelli Flash testuali stabili piu recenti della famiglia 3 e i soli Gemini 4 Hydrogen e Argon, se restituiti dall API. I modelli multimediali sono esclusi. L elenco non garantisce autorizzazione, disponibilita o quota: l accesso da Gemini AI Pro e quello tramite chiave API dipendono da configurazioni e fatturazione distinte. Prima dell aggiornamento resta disponibile il modello predefinito se ammesso dal filtro. La scelta Predefinito conserva le impostazioni precedenti; Low puo ridurre il tempo senza garantire il risultato. In caso di timeout non viene effettuato un nuovo tentativo automatico e l eventuale costo va verificato su Google. La chiave non viene inviata al browser. I modelli non presenti nel listino interno mostrano costo non disponibile. Stime standard verificate il 12/11/2026, soggette a variazioni Google e non equivalenti alla fattura. Nessuna migrazione SQL e nessuna modifica ai report archiviati.
 
 La pagina `Report AI` e un centro operativo che usa Gemini lato server per generare report sullo storico degli snapshot. Per il portafoglio sono disponibili report complessivo, confronto quotidiano e confronto settimanale del sabato. La sezione Patrimonio e opzionale e offre le stesse tre modalita usando soltanto gli snapshot patrimoniali disponibili: mantiene separati patrimonio Fineco, portafoglio consolidato, liquidita, saldi e credito. Il confronto settimanale e disponibile esclusivamente il sabato e usa le rilevazioni con data esatta del sabato corrente e del sabato precedente, distanti sette giorni. Le anteprime sono calcolate gratuitamente da PHP, mentre la spiegazione AI parte solo dopo conferma. La semplice apertura della pagina non esegue chiamate API: ogni generazione richiede un'azione e una conferma esplicite. Durante l'elaborazione viene mostrato un overlay con avanzamento stimato, stato finale ed eventuali errori.
 Configura la chiave solo in `config/config.local.php` o tramite `PORTFOLIO_GEMINI_API_KEY`.

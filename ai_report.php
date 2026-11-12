@@ -14,6 +14,11 @@ $maxOutputTokens = (int) ($geminiConfig['max_output_tokens'] ?? 20000);
 $apiKey = (string) ($geminiConfig['api_key'] ?? '');
 $apiConfigured = $apiKey !== '' && !str_contains($apiKey, 'INSERISCI_CHIAVE');
 $isAsyncRequest = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+$modelList = $_SESSION['ai_report_models'] ?? [];
+$availableModels = is_array($modelList) && hash_equals((string) ($modelList['key_hash'] ?? ''), hash('sha256', $apiKey))
+    && is_array($modelList['models'] ?? null) ? ai_report_curate_models($modelList['models']) : [];
+$modelOptions = $availableModels !== [] ? $availableModels : ai_report_curate_models([$configuredModel]);
+$defaultModel = in_array($configuredModel, $modelOptions, true) ? $configuredModel : '';
 
 $reports = ai_report_archive_list();
 if ($reports === [] && ai_report_load_cache() !== null) {
@@ -42,8 +47,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'generate_account_changes',
             'generate_account_weekly_changes',
             'delete_report',
+            'refresh_models',
         ], true)) {
             throw new RuntimeException('Azione AI non riconosciuta.');
+        }
+
+        if ($action === 'refresh_models') {
+            $availableModels = ai_report_list_gemini_models($apiKey);
+            $_SESSION['ai_report_models'] = ['key_hash' => hash('sha256', $apiKey), 'models' => $availableModels];
+            set_flash('success', 'Elenco modelli aggiornato. La disponibilita effettiva dipende da accesso e quota Google.');
+            redirect('/ai_report.php');
         }
 
         if ((string) ($_POST['confirmed'] ?? '') !== '1') {
@@ -60,6 +73,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$apiConfigured) {
             throw new RuntimeException('Chiave Gemini non configurata.');
         }
+
+        $selectedModel = ai_report_validate_selected_model($_POST['gemini_model'] ?? $defaultModel, $modelOptions);
+        $selectedThinking = $_POST['gemini_thinking_level'] ?? '';
+        ai_report_resolve_thinking_level(array_replace($geminiConfig, ['model' => $selectedModel]), 'custom', $selectedThinking);
 
         if ($action === 'generate_custom') {
             if ($customPrompt === '') {
@@ -82,12 +99,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             default => ai_report_build_payload(db()),
         };
         if ($action === 'generate_custom') {
-            $generated = ai_report_generate_custom_with_gemini($built['payload'], $customPrompt);
+            $generated = ai_report_generate_custom_with_gemini($built['payload'], $customPrompt, $selectedModel, $selectedThinking);
             $title = $customTitle !== '' ? $customTitle : 'Analisi personalizzata';
             $record = ai_report_archive_generated($generated, $built, 'custom', $title, $customPrompt);
             set_flash('success', 'Report personalizzato generato e archiviato.');
         } elseif ($action === 'generate_weekly_changes') {
-            $generated = ai_report_generate_weekly_changes_with_gemini($built['payload']);
+            $generated = ai_report_generate_weekly_changes_with_gemini($built['payload'], $selectedModel, $selectedThinking);
             $dateTo = (string) ($built['payload']['date_range']['to'] ?? '');
             $title = 'Cosa e cambiato settimanale?';
             if ($dateTo !== '') {
@@ -96,11 +113,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $record = ai_report_archive_generated($generated, $built, 'weekly_changes', $title);
             set_flash('success', 'Confronto settimanale generato e archiviato.');
         } elseif ($action === 'generate_account_general') {
-            $generated = ai_report_generate_account_with_gemini($built['payload']);
+            $generated = ai_report_generate_account_with_gemini($built['payload'], $selectedModel, $selectedThinking);
             $record = ai_report_archive_generated($generated, $built, 'account_general', 'Report complessivo del patrimonio');
             set_flash('success', 'Report complessivo del patrimonio generato e archiviato.');
         } elseif ($action === 'generate_account_weekly_changes') {
-            $generated = ai_report_generate_account_changes_with_gemini($built['payload'], 'weekly');
+            $generated = ai_report_generate_account_changes_with_gemini($built['payload'], 'weekly', $selectedModel, $selectedThinking);
             $dateTo = (string) ($built['payload']['date_range']['to'] ?? '');
             $title = 'Cosa e cambiato nel patrimonio settimanale?';
             if ($dateTo !== '') {
@@ -109,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $record = ai_report_archive_generated($generated, $built, 'account_weekly_changes', $title);
             set_flash('success', 'Confronto patrimoniale settimanale generato e archiviato.');
         } elseif ($action === 'generate_account_changes') {
-            $generated = ai_report_generate_account_changes_with_gemini($built['payload']);
+            $generated = ai_report_generate_account_changes_with_gemini($built['payload'], 'daily', $selectedModel, $selectedThinking);
             $dateTo = (string) ($built['payload']['date_range']['to'] ?? '');
             $title = 'Cosa e cambiato nel patrimonio?';
             if ($dateTo !== '') {
@@ -118,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $record = ai_report_archive_generated($generated, $built, 'account_changes', $title);
             set_flash('success', 'Confronto patrimoniale generato e archiviato.');
         } elseif ($action === 'generate_changes') {
-            $generated = ai_report_generate_changes_with_gemini($built['payload']);
+            $generated = ai_report_generate_changes_with_gemini($built['payload'], $selectedModel, $selectedThinking);
             $dateTo = (string) ($built['payload']['date_range']['to'] ?? '');
             $title = 'Cosa e cambiato?';
             if ($dateTo !== '') {
@@ -127,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $record = ai_report_archive_generated($generated, $built, 'changes', $title);
             set_flash('success', 'Confronto degli ultimi snapshot generato e archiviato.');
         } else {
-            $generated = ai_report_generate_with_gemini($built['payload']);
+            $generated = ai_report_generate_with_gemini($built['payload'], $selectedModel, $selectedThinking);
             $record = ai_report_archive_generated($generated, $built, 'general', 'Report complessivo del portafoglio');
             set_flash('success', 'Report complessivo generato e archiviato.');
         }
@@ -264,6 +281,26 @@ $formatSignedMoney = static function (float $value): string {
 $formatAccountMoney = static function (?float $value, bool $signed = false): string {
     return $value === null ? 'Dato non disponibile' : 'EUR ' . ai_report_format_number_it($value, 2, $signed);
 };
+$renderModelSelector = static function () use ($modelOptions, $defaultModel): void {
+    echo '<label class="ai-model-select">Modello per questo report <select name="gemini_model" required>';
+    if ($defaultModel === '') {
+        echo '<option value="" selected disabled>Seleziona un modello</option>';
+    }
+    foreach ($modelOptions as $model) {
+        $selected = $model === $defaultModel ? ' selected' : '';
+        $inputRate = ai_report_estimate_cost_usd($model, 1000000, 0, 0, date('Y-m-d'));
+        $outputRate = ai_report_estimate_cost_usd($model, 0, 1000000, 0, date('Y-m-d'));
+        $price = $inputRate === null || $outputRate === null ? ' - costo non disponibile' : ' - $' . number_format($inputRate, 2) . '/$' . number_format($outputRate, 2) . ' per 1M token';
+        echo '<option value="' . e($model) . '"' . $selected . '>' . e($model . $price) . '</option>';
+    }
+    echo '</select></label>';
+    echo '<label class="ai-model-select">Sforzo di ragionamento <select name="gemini_thinking_level">';
+    echo '<option value="">Predefinito del report</option>';
+    echo '<option value="low">Low - piu veloce</option>';
+    echo '<option value="medium">Medium - bilanciato</option>';
+    echo '<option value="high">High - piu approfondito</option>';
+    echo '</select></label>';
+};
 
 include __DIR__ . '/partials/header.php';
 ?>
@@ -285,7 +322,7 @@ include __DIR__ . '/partials/header.php';
 
 <section class="cards ai-service-cards" aria-label="Informazioni servizio AI">
     <article class="card">
-        <h3>Modello</h3>
+        <h3>Modello predefinito</h3>
         <p class="ai-meta-big"><?= e($configuredModel) ?></p>
     </article>
     <article class="card">
@@ -302,6 +339,18 @@ include __DIR__ . '/partials/header.php';
         <p class="big"><?= number_format((int) $archiveStats['total_tokens'], 0, ',', '.') ?></p>
         <p class="tiny-note">Consumo storico archiviato</p>
     </article>
+</section>
+
+<section class="panel">
+    <h2>Modelli Gemini</h2>
+    <p>Puoi scegliere modello e sforzo prima di ogni report. L'elenco mostra i due Flash testuali piu recenti e, se restituiti dall'API, Hydrogen e Argon. La presenza nell'elenco non garantisce disponibilita, quota o autorizzazione alla generazione.</p>
+    <p class="tiny-note">La scelta Predefinito mantiene il livello configurato per il report. Low puo ridurre tempi e consumo, ma non garantisce il completamento entro il timeout. Il piano Gemini e la fatturazione API possono essere distinti.</p>
+    <p class="tiny-note">Le tariffe mostrate sono stime standard per token input/output, basate sul listino verificato il 12/11/2026; non comprendono eventuali ricerche o altri costi. Per i modelli senza listino configurato il costo non e disponibile. La chiave resta sul server.</p>
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+        <input type="hidden" name="action" value="refresh_models">
+        <button type="submit" <?= !$apiConfigured ? 'disabled' : '' ?>>Aggiorna elenco modelli</button>
+    </form>
 </section>
 
 <?php if ($reports !== []): ?>
@@ -381,6 +430,7 @@ include __DIR__ . '/partials/header.php';
             <form method="post" id="changes-report-form">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="generate_changes">
+                <?php $renderModelSelector(); ?>
                 <details class="ai-inline-confirm">
                     <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Spiegami cosa e cambiato</summary>
                     <div class="ai-inline-confirm-body">
@@ -456,6 +506,7 @@ include __DIR__ . '/partials/header.php';
             <form method="post" id="weekly-changes-report-form">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="generate_weekly_changes">
+                <?php $renderModelSelector(); ?>
                 <details class="ai-inline-confirm">
                     <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Spiegami la settimana</summary>
                     <div class="ai-inline-confirm-body">
@@ -475,11 +526,12 @@ include __DIR__ . '/partials/header.php';
             <span class="ai-generator-kicker">Analisi standard</span>
             <h2>Report complessivo</h2>
             <p>Analizza tutti gli snapshot con la struttura e i controlli numerici del prompt madre.</p>
-            <p class="tiny-note">Ragionamento: <?= e(ucfirst($generalThinkingLevel)) ?></p>
+            <p class="tiny-note">Ragionamento del modello predefinito: <?= e(ucfirst($generalThinkingLevel)) ?>. Il livello effettivo dipende dal modello scelto.</p>
         </div>
         <form method="post" id="general-report-form">
             <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="generate_general">
+            <?php $renderModelSelector(); ?>
             <details class="ai-inline-confirm">
                 <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Genera report complessivo</summary>
                 <div class="ai-inline-confirm-body">
@@ -500,6 +552,7 @@ include __DIR__ . '/partials/header.php';
         <form method="post" id="custom-report-form" class="ai-custom-form">
             <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="generate_custom">
+            <?php $renderModelSelector(); ?>
             <label>
                 Titolo facoltativo
                 <input type="text" name="custom_title" maxlength="120" value="<?= e($customTitle) ?>" placeholder="Es. Analisi della concentrazione">
@@ -569,6 +622,7 @@ include __DIR__ . '/partials/header.php';
             <form method="post" id="account-general-report-form">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="generate_account_general">
+                <?php $renderModelSelector(); ?>
                 <details class="ai-inline-confirm">
                     <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Genera report patrimonio</summary>
                     <div class="ai-inline-confirm-body">
@@ -611,6 +665,7 @@ include __DIR__ . '/partials/header.php';
             <form method="post" id="account-changes-report-form">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="generate_account_changes">
+                <?php $renderModelSelector(); ?>
                 <details class="ai-inline-confirm">
                     <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Spiegami cosa e cambiato</summary>
                     <div class="ai-inline-confirm-body">
@@ -653,6 +708,7 @@ include __DIR__ . '/partials/header.php';
             <form method="post" id="account-weekly-changes-report-form">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="generate_account_weekly_changes">
+                <?php $renderModelSelector(); ?>
                 <details class="ai-inline-confirm">
                     <summary class="<?= !$apiConfigured ? 'ai-action-disabled' : '' ?>">Spiegami la settimana</summary>
                     <div class="ai-inline-confirm-body">

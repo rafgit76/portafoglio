@@ -2,6 +2,28 @@
 
 return [
     [
+        'version' => '2.8.4',
+        'date' => '2026-11-12',
+        'title' => 'Modelli Gemini essenziali e sforzo per report',
+        'changes' => [
+            'Elenco limitato ai due Flash testuali piu recenti e ai modelli Hydrogen e Argon restituiti dall API; modelli multimediali esclusi.',
+            'Il livello di ragionamento e selezionabile per ogni report; la scelta predefinita conserva le impostazioni precedenti.',
+            'Il timeout segnala la possibile presenza di costi non verificabili, senza ripetere automaticamente la chiamata.',
+            'Nessuna migrazione o modifica agli snapshot e ai report archiviati.',
+        ],
+    ],
+    [
+        'version' => '2.8.3',
+        'date' => '2026-11-12',
+        'title' => 'Scelta del modello Gemini per report',
+        'changes' => [
+            'Ogni report AI consente di scegliere il modello Gemini, mantenendo quello configurato come predefinito.',
+            'Elenco aggiornabile su richiesta tramite API Google, limitato ai modelli testuali compatibili; disponibilita e quota restano da verificare.',
+            'Stime di costo per Hydrogen, Argon e Carbon e tariffe 3.8 aggiornate alle scadenze note. Chiave e archivio restano protetti.',
+            'Nessuna migrazione o modifica agli snapshot.',
+        ],
+    ],
+    [
         'version' => '2.8.2',
         'date' => '2026-11-03',
         'title' => 'Sicurezza import Excel e compatibilita CSV',

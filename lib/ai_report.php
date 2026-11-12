@@ -197,7 +197,8 @@ function ai_report_archive_generated(
         (string) ($generated['model'] ?? ''),
         (int) ($generated['prompt_tokens'] ?? 0),
         (int) ($generated['output_tokens'] ?? 0),
-        (int) ($generated['thinking_tokens'] ?? 0)
+        (int) ($generated['thinking_tokens'] ?? 0),
+        substr((string) ($generated['generated_at'] ?? date('c')), 0, 10)
     );
 
     return ai_report_archive_save([
@@ -678,7 +679,7 @@ function ai_report_latest_positions(PDO $pdo, int $snapshotId): array
     return $statement->fetchAll();
 }
 
-function ai_report_generate_with_gemini(array $historyPayload): array
+function ai_report_generate_with_gemini(array $historyPayload, ?string $model = null, ?string $thinking = null): array
 {
     $payloadJson = ai_report_encode_payload($historyPayload);
     $verifiedFacts = ai_report_build_verified_facts($historyPayload);
@@ -688,11 +689,13 @@ function ai_report_generate_with_gemini(array $historyPayload): array
         ai_report_build_prompt($payloadJson, $verifiedFacts),
         'general',
         $historyPayload,
-        $verifiedFacts
+        $verifiedFacts,
+        $model,
+        $thinking
     );
 }
 
-function ai_report_generate_custom_with_gemini(array $historyPayload, string $customPrompt): array
+function ai_report_generate_custom_with_gemini(array $historyPayload, string $customPrompt, ?string $model = null, ?string $thinking = null): array
 {
     $payloadJson = ai_report_encode_payload($historyPayload);
     $verifiedFacts = ai_report_build_verified_facts($historyPayload);
@@ -702,11 +705,13 @@ function ai_report_generate_custom_with_gemini(array $historyPayload, string $cu
         ai_report_build_custom_prompt($payloadJson, $customPrompt, $verifiedFacts),
         'custom',
         $historyPayload,
-        $verifiedFacts
+        $verifiedFacts,
+        $model,
+        $thinking
     );
 }
 
-function ai_report_generate_changes_with_gemini(array $historyPayload): array
+function ai_report_generate_changes_with_gemini(array $historyPayload, ?string $model = null, ?string $thinking = null): array
 {
     $payloadJson = ai_report_encode_payload($historyPayload);
     $verifiedFacts = ai_report_build_changes_verified_facts($historyPayload);
@@ -716,11 +721,13 @@ function ai_report_generate_changes_with_gemini(array $historyPayload): array
         ai_report_build_changes_prompt($payloadJson, $verifiedFacts),
         'changes',
         $historyPayload,
-        $verifiedFacts
+        $verifiedFacts,
+        $model,
+        $thinking
     );
 }
 
-function ai_report_generate_weekly_changes_with_gemini(array $historyPayload): array
+function ai_report_generate_weekly_changes_with_gemini(array $historyPayload, ?string $model = null, ?string $thinking = null): array
 {
     $payloadJson = ai_report_encode_payload($historyPayload);
     $verifiedFacts = ai_report_build_changes_verified_facts($historyPayload);
@@ -730,7 +737,9 @@ function ai_report_generate_weekly_changes_with_gemini(array $historyPayload): a
         ai_report_build_changes_prompt($payloadJson, $verifiedFacts, 'weekly'),
         'changes',
         $historyPayload,
-        $verifiedFacts
+        $verifiedFacts,
+        $model,
+        $thinking
     );
 }
 
@@ -1082,7 +1091,7 @@ JSON dei soli snapshot patrimoniali confrontati, utilizzabile soltanto come cont
 PROMPT;
 }
 
-function ai_report_generate_account_with_gemini(array $historyPayload): array
+function ai_report_generate_account_with_gemini(array $historyPayload, ?string $model = null, ?string $thinking = null): array
 {
     $payloadJson = ai_report_encode_payload($historyPayload);
     $verifiedFacts = ai_report_build_account_verified_facts($historyPayload);
@@ -1091,11 +1100,13 @@ function ai_report_generate_account_with_gemini(array $historyPayload): array
         ai_report_build_account_prompt($payloadJson, $verifiedFacts),
         'account_general',
         $historyPayload,
-        $verifiedFacts
+        $verifiedFacts,
+        $model,
+        $thinking
     );
 }
 
-function ai_report_generate_account_changes_with_gemini(array $historyPayload, string $comparisonKind = 'daily'): array
+function ai_report_generate_account_changes_with_gemini(array $historyPayload, string $comparisonKind = 'daily', ?string $model = null, ?string $thinking = null): array
 {
     $payloadJson = ai_report_encode_payload($historyPayload);
     $verifiedFacts = ai_report_build_account_verified_facts($historyPayload);
@@ -1105,7 +1116,9 @@ function ai_report_generate_account_changes_with_gemini(array $historyPayload, s
         ai_report_build_account_changes_prompt($payloadJson, $verifiedFacts, $comparisonKind),
         $type,
         $historyPayload,
-        $verifiedFacts
+        $verifiedFacts,
+        $model,
+        $thinking
     );
 }
 
@@ -1119,16 +1132,141 @@ function ai_report_encode_payload(array $historyPayload): string
     return $payloadJson;
 }
 
+function ai_report_filter_available_models(array $models): array
+{
+    $result = [];
+    foreach ($models as $model) {
+        if (!is_array($model) || !is_array($model['supportedGenerationMethods'] ?? null) || !in_array('generateContent', $model['supportedGenerationMethods'], true)) {
+            continue;
+        }
+        $name = (string) ($model['name'] ?? '');
+        if (!preg_match('/^models\/(gemini-[a-zA-Z0-9][a-zA-Z0-9._-]*)$/', $name, $match)) {
+            continue;
+        }
+        $id = $match[1];
+        if (preg_match('/(?:image|audio|video|tts|live|transcrib|embed|computer|robot|speech)/i', $id)) {
+            continue;
+        }
+        $result[$id] = $id;
+    }
+    return ai_report_curate_models(array_values($result));
+}
+
+function ai_report_curate_models(array $models): array
+{
+    $flash = [];
+    $family4 = [];
+    foreach ($models as $id) {
+        if (!is_string($id)) {
+            continue;
+        }
+        if (preg_match('/^gemini-3\.([0-9]+)-flash$/', $id)) {
+            $flash[$id] = $id;
+        } elseif (in_array($id, ['gemini-4-hydrogen', 'gemini-4-argon'], true)) {
+            $family4[$id] = $id;
+        }
+    }
+    $flash = array_values($flash);
+    usort($flash, static fn (string $a, string $b): int => strnatcasecmp($b, $a));
+    $result = array_slice($flash, 0, 2);
+    foreach (['gemini-4-hydrogen', 'gemini-4-argon'] as $id) {
+        if (isset($family4[$id])) {
+            $result[] = $id;
+        }
+    }
+    return $result;
+}
+
+function ai_report_validate_selected_model(mixed $model, array $options): string
+{
+    if (!is_string($model) || !in_array($model, $options, true)) {
+        throw new RuntimeException('Modello non valido. Aggiorna l\'elenco e seleziona un modello disponibile.');
+    }
+    return $model;
+}
+
+function ai_report_fetch_model_page(string $url, string $apiKey, int $timeoutSeconds): array
+{
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        if ($ch === false) {
+            throw new RuntimeException('Impossibile inizializzare la connessione a Gemini.');
+        }
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $apiKey], CURLOPT_TIMEOUT => max(10, $timeoutSeconds), CURLOPT_CONNECTTIMEOUT => 15]);
+        $raw = curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+    } else {
+        $context = stream_context_create(['http' => ['method' => 'GET', 'header' => 'x-goog-api-key: ' . $apiKey . "\r\n", 'timeout' => max(10, $timeoutSeconds), 'ignore_errors' => true, 'follow_location' => 0]]);
+        $raw = @file_get_contents($url, false, $context);
+        $status = 0;
+        foreach (($http_response_header ?? []) as $header) {
+            if (preg_match('/^HTTP\/\S+\s+(\d+)/', $header, $matches)) {
+                $status = (int) $matches[1];
+                break;
+            }
+        }
+    }
+    if (!is_string($raw) || $status < 200 || $status >= 300) {
+        throw new RuntimeException('Impossibile aggiornare i modelli Gemini. Verifica connessione, chiave e autorizzazioni' . ($status > 0 ? ' (HTTP ' . $status . ').' : '.'));
+    }
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded) || !is_array($decoded['models'] ?? null)) {
+        throw new RuntimeException('Elenco modelli Gemini non valido.');
+    }
+    return $decoded;
+}
+
+function ai_report_list_gemini_models(string $apiKey, int $timeoutSeconds = 20, ?callable $fetchPage = null): array
+{
+    if ($apiKey === '' || str_contains($apiKey, 'INSERISCI_CHIAVE')) {
+        throw new RuntimeException('Chiave Gemini non configurata.');
+    }
+    $all = [];
+    $pageToken = '';
+    $fetchPage = $fetchPage ?? 'ai_report_fetch_model_page';
+    for ($page = 0; $page < 10; $page++) {
+        $url = 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100';
+        if ($pageToken !== '') {
+            $url .= '&pageToken=' . rawurlencode($pageToken);
+        }
+        $decoded = $fetchPage($url, $apiKey, $timeoutSeconds);
+        if (!is_array($decoded) || !is_array($decoded['models'] ?? null)) {
+            throw new RuntimeException('Elenco modelli Gemini non valido.');
+        }
+        $all = array_merge($all, $decoded['models']);
+        $pageToken = (string) ($decoded['nextPageToken'] ?? '');
+        if ($pageToken === '') {
+            return ai_report_filter_available_models($all);
+        }
+    }
+    throw new RuntimeException('Elenco modelli Gemini incompleto: troppe pagine.');
+}
+
 function ai_report_thinking_level(array $geminiConfig, string $reportType): string
 {
     $model = (string) ($geminiConfig['model'] ?? 'gemini-3.8-flash');
+    if (!preg_match('/^gemini-(?:4(?:-|$)|3\.(?:[568](?:-|$)|7(?:-|$)|1-pro(?:-|$)))/', $model)) {
+        return 'auto';
+    }
     $isGeneral38 = $model === 'gemini-3.8-flash' && $reportType === 'general';
     $default = $isGeneral38 ? 'low' : 'medium';
     $key = $isGeneral38 ? 'general_thinking_level' : 'thinking_level';
     $level = (string) ($geminiConfig[$key] ?? $default);
-    $allowed = $model === 'gemini-3.8-flash' ? ['low', 'medium', 'high'] : ['minimal', 'low', 'medium', 'high'];
+    $allowed = preg_match('/^gemini-(?:4|3\.[78])/', $model) ? ['low', 'medium', 'high'] : ['minimal', 'low', 'medium', 'high'];
 
     return in_array($level, $allowed, true) ? $level : $default;
+}
+
+function ai_report_resolve_thinking_level(array $geminiConfig, string $reportType, mixed $selectedLevel): string
+{
+    if ($selectedLevel === null || $selectedLevel === '') {
+        return ai_report_thinking_level($geminiConfig, $reportType);
+    }
+    if (!is_string($selectedLevel) || !in_array($selectedLevel, ['low', 'medium', 'high'], true)) {
+        throw new RuntimeException('Livello di ragionamento non valido.');
+    }
+    return $selectedLevel;
 }
 
 function ai_report_assert_token_limit(array $responses, string $model, string $thinkingLevel, int $maxOutputTokens): void
@@ -1153,7 +1291,7 @@ function ai_report_assert_token_limit(array $responses, string $model, string $t
     }
 
     $usage = ai_report_sum_usage($responses);
-    $cost = ai_report_estimate_cost_usd($model, $usage['prompt_tokens'], $usage['output_tokens'], $usage['thinking_tokens']);
+    $cost = ai_report_estimate_cost_usd($model, $usage['prompt_tokens'], $usage['output_tokens'], $usage['thinking_tokens'], date('Y-m-d'));
     throw new RuntimeException($message
         . ' Consumi dei tentativi: input ' . $usage['prompt_tokens']
         . ', risposta ' . $usage['output_tokens'] . ', ragionamento ' . $usage['thinking_tokens']
@@ -1165,13 +1303,18 @@ function ai_report_generate_request(
     string $prompt,
     string $reportType,
     array $historyPayload,
-    string $verifiedFacts
+    string $verifiedFacts,
+    ?string $selectedModel = null,
+    ?string $selectedThinking = null
 ): array
 {
     $geminiConfig = app_config()['gemini'] ?? [];
+    if ($selectedModel !== null) {
+        $geminiConfig['model'] = $selectedModel;
+    }
     $apiKey = (string) ($geminiConfig['api_key'] ?? '');
     $model = (string) ($geminiConfig['model'] ?? 'gemini-3.8-flash');
-    $thinkingLevel = ai_report_thinking_level($geminiConfig, $reportType);
+    $thinkingLevel = ai_report_resolve_thinking_level($geminiConfig, $reportType, $selectedThinking);
     $maxOutputTokens = max(4000, min(65536, (int) ($geminiConfig['max_output_tokens'] ?? 20000)));
     $timeoutSeconds = (int) ($geminiConfig['timeout_seconds'] ?? 90);
 
@@ -1829,7 +1972,7 @@ function ai_report_gemini_request(
     array $tools = []
 ): array
 {
-    $allowedThinkingLevels = ['minimal', 'low', 'medium', 'high'];
+    $allowedThinkingLevels = ['auto', 'minimal', 'low', 'medium', 'high'];
     if (!in_array($thinkingLevel, $allowedThinkingLevels, true)) {
         $thinkingLevel = 'medium';
     }
@@ -1852,11 +1995,12 @@ function ai_report_gemini_request(
         'generationConfig' => [
             'maxOutputTokens' => max(4000, min(65536, $maxOutputTokens)),
             'responseMimeType' => 'text/plain',
-            'thinkingConfig' => [
-                'thinkingLevel' => $thinkingLevel,
-            ],
         ],
     ];
+
+    if ($thinkingLevel !== 'auto') {
+        $body['generationConfig']['thinkingConfig'] = ['thinkingLevel' => $thinkingLevel];
+    }
 
     if ($tools !== []) {
         $body['tools'] = $tools;
@@ -1895,10 +2039,14 @@ function ai_report_gemini_request_curl(string $url, string $apiKey, string $json
 
     $raw = curl_exec($ch);
     $curlError = curl_error($ch);
+    $curlErrorCode = curl_errno($ch);
     $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
     if ($raw === false) {
+        if ($curlErrorCode === CURLE_OPERATION_TIMEDOUT) {
+            throw new RuntimeException('Tempo di attesa Gemini scaduto. Nessun report e stato salvato. Il costo eventuale non e noto: controlla i consumi Google prima di riprovare. Puoi scegliere Low per ridurre il ragionamento, senza garanzia di successo.');
+        }
         throw new RuntimeException('Errore rete Gemini: ' . $curlError);
     }
 
@@ -2295,7 +2443,8 @@ function ai_report_record_estimated_cost_usd(array $report): ?float
         (string) ($report['model'] ?? ''),
         (int) $usage['prompt_tokens'],
         (int) $usage['output_tokens'],
-        (int) $usage['thinking_tokens']
+        (int) $usage['thinking_tokens'],
+        !empty($report['generated_at']) ? substr((string) $report['generated_at'], 0, 10) : null
     );
 }
 
@@ -2308,7 +2457,8 @@ function ai_report_estimate_cost_usd(
     string $model,
     int $promptTokens,
     int $outputTokens,
-    int $thinkingTokens = 0
+    int $thinkingTokens = 0,
+    ?string $pricingDate = null
 ): ?float {
     // Gemini 3.8 introductory rates verified on 2026-09-02, valid through 2026-12-31.
     // Older model rates are retained for existing reports.
@@ -2318,7 +2468,21 @@ function ai_report_estimate_cost_usd(
         'gemini-3.6-flash' => ['input' => 1.50, 'output' => 7.50],
         'gemini-3.7-flash' => ['input' => 0.75, 'output' => 3.75],
         'gemini-3.8-flash' => ['input' => 0.75, 'output' => 3.75],
+        'gemini-4-hydrogen' => ['input' => 1.50, 'output' => 7.50],
     ];
+
+    if ($pricingDate !== null) {
+        if (in_array($model, ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash'], true)) {
+            $ratesPerMillionTokens[$model] = $pricingDate < '2027-01-01'
+                ? ['input' => 0.75, 'output' => 3.75]
+                : ['input' => 1.50, 'output' => 7.50];
+        }
+        if ($model === 'gemini-4-argon' || $model === 'gemini-4-carbon') {
+            $ratesPerMillionTokens[$model] = $pricingDate < '2026-12-01'
+                ? ['input' => 2.00, 'output' => 10.00]
+                : ['input' => 4.00, 'output' => 20.00];
+        }
+    }
 
     $rates = $ratesPerMillionTokens[$model] ?? null;
     if (!is_array($rates)) {

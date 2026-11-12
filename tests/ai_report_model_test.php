@@ -19,6 +19,61 @@ $assert($close(ai_report_estimate_cost_usd('gemini-3.8-flash', 0, 0, 0), 0.0), '
 $assert($close(ai_report_estimate_cost_usd('gemini-3.7-flash', 15000, 2000, 3000), 0.03), 'tariffe storiche 3.7 invariate');
 $assert($close(ai_report_estimate_cost_usd('gemini-3.5-flash-lite', 1000000, 1000000), 2.80), 'tariffe storiche Flash Lite invariate');
 $assert(ai_report_estimate_cost_usd('unknown-model', 1000, 1000) === null, 'modello sconosciuto senza costo inventato');
+$assert($close(ai_report_estimate_cost_usd('gemini-4-hydrogen', 1000000, 1000000), 9.00), 'tariffe Hydrogen input e output');
+$assert($close(ai_report_estimate_cost_usd('gemini-3.8-flash', 1000000, 1000000, 0, '2026-12-31'), 4.50), '3.8 listino promozionale');
+$assert($close(ai_report_estimate_cost_usd('gemini-3.8-flash', 1000000, 1000000, 0, '2027-01-01'), 9.00), '3.8 listino alla scadenza');
+$assert($close(ai_report_estimate_cost_usd('gemini-4-argon', 1000000, 1000000, 0, '2026-11-30'), 12.00), 'Argon listino promozionale');
+$assert($close(ai_report_estimate_cost_usd('gemini-4-argon', 1000000, 1000000, 0, '2026-12-01'), 24.00), 'Argon listino alla scadenza');
+$available = ai_report_filter_available_models([
+    ['name' => 'models/gemini-4-hydrogen', 'supportedGenerationMethods' => ['generateContent']],
+    ['name' => 'models/gemini-3.8-flash', 'supportedGenerationMethods' => ['generateContent']],
+    ['name' => 'models/gemini-4-hydrogen', 'supportedGenerationMethods' => ['generateContent']],
+    ['name' => 'models/gemini-3.8-flash-tts', 'supportedGenerationMethods' => ['generateContent']],
+    ['name' => 'models/gemini-image', 'supportedGenerationMethods' => ['generateContent']],
+    ['name' => 'models/gemini-embed', 'supportedGenerationMethods' => ['embedContent']],
+    ['name' => 'models/gemini-evil/other', 'supportedGenerationMethods' => ['generateContent']],
+    ['name' => 'models/gemini-bad', 'supportedGenerationMethods' => 'generateContent'],
+]);
+$assert($available === ['gemini-3.8-flash', 'gemini-4-hydrogen'], 'elenco modelli filtrato, ordinato e senza duplicati');
+$curated = ai_report_curate_models([
+    'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.10-flash',
+    'gemini-3.11-flash-preview', 'gemini-3.8-flash-lite', 'gemini-3.8-omni',
+    'gemini-4-hydrogen', 'gemini-4-argon', 'gemini-4-carbon', 'gemini-4-argon',
+]);
+$assert($curated === ['gemini-3.10-flash', 'gemini-3.8-flash', 'gemini-4-hydrogen', 'gemini-4-argon'], 'solo due Flash stabili piu recenti, Hydrogen e Argon');
+$assert(ai_report_curate_models(['gemini-4-carbon', 'gemini-omni', 'gemini-3.8-flash-tts']) === [], 'modelli esclusi anche da sessioni precedenti');
+$assert(ai_report_validate_selected_model('gemini-4-hydrogen', $available) === 'gemini-4-hydrogen', 'modello scelto validato');
+foreach (['gemini-other', ['gemini-4-hydrogen']] as $invalidModel) {
+    $rejectedModel = false;
+    try {
+        ai_report_validate_selected_model($invalidModel, $available);
+    } catch (RuntimeException $error) {
+        $rejectedModel = true;
+    }
+    $assert($rejectedModel, 'modello non presente o non valido rifiutato');
+}
+$requests = [];
+$mockPages = static function (string $url, string $key, int $timeout) use (&$requests): array {
+    $requests[] = [$url, $key, $timeout];
+    return count($requests) === 1
+        ? ['models' => [['name' => 'models/gemini-3.8-flash', 'supportedGenerationMethods' => ['generateContent']]], 'nextPageToken' => 'next/+']
+        : ['models' => [['name' => 'models/gemini-4-hydrogen', 'supportedGenerationMethods' => ['generateContent']]]];
+};
+$assert(ai_report_list_gemini_models('test-secret', 20, $mockPages) === ['gemini-3.8-flash', 'gemini-4-hydrogen'], 'elenco acquisito da tutte le pagine');
+$assert(count($requests) === 2 && str_contains($requests[1][0], 'pageToken=next%2F%2B'), 'paginazione con token codificato');
+$assert(!str_contains($requests[0][0], 'test-secret') && $requests[0][1] === 'test-secret', 'chiave non inserita nell URL');
+$rejectedList = false;
+try {
+    ai_report_list_gemini_models('test-secret', 20, static fn (): array => ['unexpected' => []]);
+} catch (RuntimeException $error) {
+    $rejectedList = true;
+}
+$assert($rejectedList, 'risposta elenco malformata rifiutata');
+$pageSource = file_get_contents(__DIR__ . '/../ai_report.php');
+foreach (['generate_general', 'generate_custom', 'generate_changes', 'generate_weekly_changes', 'generate_account_general', 'generate_account_changes', 'generate_account_weekly_changes'] as $action) {
+    $pattern = '/name="action" value="' . preg_quote($action, '/') . '"[^>]*>\s*<\?php \$renderModelSelector\(\); \?>/';
+    $assert(is_string($pageSource) && preg_match($pattern, $pageSource) === 1, 'selettore presente nel form ' . $action);
+}
 
 // Entrambi i tentativi sono fatturati anche quando il primo richiede correzione.
 $usage = ai_report_sum_usage([
@@ -135,6 +190,23 @@ foreach (['changes', 'weekly_changes', 'account_general', 'account_changes', 'ac
     $assert(ai_report_thinking_level($settings, $type) === 'medium', 'livello invariato per ' . $type);
 }
 $assert(ai_report_thinking_level(array_replace($settings, ['model' => 'gemini-3.7-flash']), 'general') === 'medium', 'rollback 3.7 mantiene Medium');
+$assert(ai_report_thinking_level(array_replace($settings, ['model' => 'gemini-4-hydrogen']), 'general') === 'medium', 'Hydrogen usa Medium per il complessivo');
+$hydrogenSettings = array_replace($settings, ['model' => 'gemini-4-hydrogen']);
+$assert(ai_report_resolve_thinking_level($hydrogenSettings, 'general', 'low') === 'low', 'Hydrogen Low scelto per singolo report');
+$assert(ai_report_resolve_thinking_level($hydrogenSettings, 'general', '') === 'medium', 'scelta predefinita Hydrogen invariata');
+$assert(ai_report_resolve_thinking_level($settings, 'general', '') === 'low', 'scelta predefinita 3.8 generale resta Low');
+$assert(ai_report_resolve_thinking_level($settings, 'changes', 'high') === 'high', 'High scelto esplicitamente');
+foreach ([['low'], 'xhigh', 'invalid'] as $invalidLevel) {
+    $rejectedLevel = false;
+    try {
+        ai_report_resolve_thinking_level($settings, 'general', $invalidLevel);
+    } catch (RuntimeException $error) {
+        $rejectedLevel = true;
+    }
+    $assert($rejectedLevel, 'livello di ragionamento non valido rifiutato');
+}
+$assert(ai_report_thinking_level(array_replace($settings, ['model' => 'gemini-2.5-flash']), 'changes') === 'auto', 'modello precedente usa il ragionamento predefinito del provider');
+$assert(ai_report_thinking_level(array_replace($settings, ['model' => 'gemini-future']), 'changes') === 'auto', 'modello sconosciuto usa il ragionamento predefinito del provider');
 $assert(ai_report_thinking_level(array_replace($settings, ['general_thinking_level' => 'medium']), 'general') === 'medium', 'override complessivo esplicito');
 $assert(ai_report_thinking_level(array_replace($settings, ['general_thinking_level' => 'minimal']), 'general') === 'low', 'Minimal non supportato su 3.8');
 $assert(ai_report_thinking_level(array_replace($settings, ['general_thinking_level' => 'high']), 'account_general') === 'medium', 'override non influenza patrimonio');

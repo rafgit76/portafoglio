@@ -99,11 +99,15 @@ const server = http.createServer((req, res) => {
             await page.goto(url + '/empty');
             assert.equal(await page.locator('.ai-archive-delete').count(), 0);
             // Generation must still use its own overlay, never the deletion dialog.
+            await page.locator('#account-general-report-form select[name="gemini_model"]').selectOption('gemini-4-hydrogen');
+            await page.locator('#account-general-report-form select[name="gemini_thinking_level"]').selectOption('low');
             await page.getByRole('button', { name: 'Genera prova' }).click();
             await page.getByText('Errore simulato', { exact: true }).waitFor();
             assert(await page.locator('#ai-generation-overlay').isVisible());
             assert(!(await modal.isVisible()));
             assert.equal(posts.at(-1).headers['x-requested-with'], 'XMLHttpRequest');
+            assert(posts.at(-1).body.includes('gemini-4-hydrogen'));
+            assert(posts.at(-1).body.includes('name="gemini_thinking_level"') && posts.at(-1).body.includes('\r\nlow\r\n'));
             await context.close();
         }
         const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
@@ -122,6 +126,13 @@ const server = http.createServer((req, res) => {
         await page.getByText('POST di prova ricevuto, nessun report eliminato.').waitFor();
         assert.equal(new URLSearchParams(posts.at(-1).body).get('report_id'), 'test-report-5');
         assert.equal(new URLSearchParams(posts.at(-1).body).get('confirmed'), '1');
+        await page.goto(url + '/empty');
+        await page.locator('#account-general-report-form select[name="gemini_model"]').selectOption('gemini-4-hydrogen');
+        await page.locator('#account-general-report-form select[name="gemini_thinking_level"]').selectOption('low');
+        await page.getByRole('button', { name: 'Genera prova' }).click();
+        await page.getByText('POST di prova ricevuto, nessun report eliminato.').waitFor();
+        assert.equal(new URLSearchParams(posts.at(-1).body).get('gemini_model'), 'gemini-4-hydrogen');
+        assert.equal(new URLSearchParams(posts.at(-1).body).get('gemini_thinking_level'), 'low');
         await context.close();
         assert.deepEqual(errors, []);
         console.log('OK: desktop/mobile, annulla, Esc, backdrop, focus, ID/CSRF, doppio invio, fallback senza JS e overlay generazione.');
