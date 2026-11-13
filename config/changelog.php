@@ -2,6 +2,27 @@
 
 return [
     [
+        'version' => '2.9.1',
+        'date' => '2026-11-13',
+        'title' => 'Export storico Credit Lombard',
+        'changes' => [
+            'Storico giornaliero completo esportabile in Excel e stampabile o salvabile in PDF.',
+            'Date e importi numerici in Excel; le lacune e il carattere indicativo delle stime restano evidenti.',
+            'Nessuna nuova migrazione o modifica agli snapshot.',
+        ],
+    ],
+    [
+        'version' => '2.9.0',
+        'date' => '2026-11-13',
+        'title' => 'Monitoraggio indicativo Credit Lombard',
+        'changes' => [
+            'Stime di utilizzo dal saldo contabile, interessi sui soli giorni osservati, storico e grafico con interruzioni in presenza di lacune.',
+            'Condizioni con decorrenza e tassi storici separati; proiezioni annuali a saldo costante e su media di giorni completi.',
+            'Il dato stimato non sostituisce l utilizzato ufficiale Fineco e non modifica gli snapshot patrimoniali.',
+            'Richiede backup e migrazione SQL manuale 2.9.0 prima dell attivazione.',
+        ],
+    ],
+    [
         'version' => '2.8.4',
         'date' => '2026-11-12',
         'title' => 'Modelli Gemini essenziali e sforzo per report',

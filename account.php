@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/lib/account_tracker.php';
+require_once __DIR__ . '/lib/credit_lombard_interest.php';
 
 $pageTitle = 'Conto e patrimonio';
 $pdo = db();
@@ -14,6 +15,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $schemaReady) {
         }
 
         $action = (string) ($_POST['action'] ?? '');
+        if ($action === 'save_lombard_rate') {
+            $date = trim((string) ($_POST['valid_from'] ?? ''));
+            if (lombard_date($date) === null) {
+                throw new RuntimeException('Data di decorrenza del tasso non valida.');
+            }
+            if (($_POST['confirm_rate'] ?? '') !== '1') {
+                throw new RuntimeException('Conferma che il tasso e la decorrenza sono stati verificati.');
+            }
+            $tan = account_tracker_optional_decimal($_POST['tan_percent'] ?? null, 'TAN');
+            $spread = account_tracker_optional_decimal($_POST['spread_percent'] ?? null, 'spread');
+            $overdraft = account_tracker_optional_decimal($_POST['overdraft_percent'] ?? null, 'tasso sconfinamento');
+            $limit = account_tracker_optional_decimal($_POST['credit_limit'] ?? null, 'plafond');
+            foreach ([$tan, $spread, $overdraft] as $value) {
+                if ($value === null || $value < 0 || $value > 100) {
+                    throw new RuntimeException('I tassi devono essere compresi tra 0 e 100%.');
+                }
+            }
+            if ($limit === null || $limit <= 0 || $limit > 1000000000) {
+                throw new RuntimeException('Plafond non valido.');
+            }
+            $benchmark = trim((string) ($_POST['benchmark'] ?? ''));
+            $notes = trim((string) ($_POST['rate_notes'] ?? ''));
+            if ($benchmark === '' || mb_strlen($benchmark) > 120 || mb_strlen($notes) > 500) {
+                throw new RuntimeException('Benchmark obbligatorio o note troppo lunghe.');
+            }
+            $statement = $pdo->prepare('INSERT INTO pf_credit_lombard_rates (valid_from, tan, spread, overdraft_tan, credit_limit, benchmark, notes) VALUES (:valid_from, :tan, :spread, :overdraft_tan, :credit_limit, :benchmark, :notes)');
+            try {
+                $statement->execute([':valid_from' => $date, ':tan' => $tan / 100, ':spread' => $spread / 100, ':overdraft_tan' => $overdraft / 100, ':credit_limit' => $limit, ':benchmark' => $benchmark, ':notes' => $notes !== '' ? $notes : null]);
+            } catch (PDOException $error) {
+                if ($error->getCode() === '23000') {
+                    throw new RuntimeException('Esiste gia una condizione con questa decorrenza. Nessuna modifica eseguita.');
+                }
+                throw $error;
+            }
+            set_flash('success', 'Condizioni Credit Lombard registrate; gli snapshot originali non sono stati modificati.');
+            redirect('/account.php#credit-lombard-monitor');
+        }
         if ($action === 'save_patrimonial_snapshot') {
             $date = trim((string) ($_POST['snapshot_date'] ?? ''));
             $parsedDate = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
@@ -147,6 +185,67 @@ $dossierTotals = $latestPortfolio ? account_tracker_snapshot_dossier_totals($pdo
 $pendingTransfers = account_tracker_pending_transfers($pdo);
 $confirmedTransfers = account_tracker_confirmed_transfers($pdo);
 $creditLombardProfiles = account_tracker_credit_lombard_profiles($pdo);
+$activeLombardProfiles = array_values(array_filter($creditLombardProfiles, static fn(array $profile): bool => $profile['status_code'] === 'ACTIVE'));
+$lombardRates = [];
+$lombardMonitor = null;
+$lombardError = null;
+$lombardSchemaReady = false;
+try {
+    $lombardRates = $pdo->query('SELECT valid_from, tan, spread, overdraft_tan, credit_limit, benchmark, notes FROM pf_credit_lombard_rates ORDER BY valid_from ASC')->fetchAll();
+    $lombardSchemaReady = true;
+    if (count($activeLombardProfiles) === 1 && $activeLombardProfiles[0]['activation_date'] !== null) {
+        $snapshots = $pdo->query('SELECT snapshot_date, accounting_balance FROM pf_patrimonial_snapshots ORDER BY snapshot_date ASC, id ASC')->fetchAll();
+        $lombardMonitor = lombard_monitor($snapshots, $lombardRates, (string) $activeLombardProfiles[0]['activation_date']);
+    } else {
+        $lombardError = 'Serve una sola linea Credit Lombard attiva con data di attivazione registrata.';
+    }
+} catch (PDOException $error) {
+    if ($error->getCode() === '42S02') {
+        $lombardError = 'Per attivare il monitoraggio serve la migrazione SQL 2.9.0, dopo un backup completo del database.';
+    } else {
+        error_log('Credit Lombard: errore lettura dati monitoraggio.');
+        $lombardError = 'Impossibile leggere i dati del monitoraggio Credit Lombard.';
+    }
+} catch (Throwable $error) {
+    error_log('Credit Lombard: dati non validi.');
+    $lombardError = 'Dati del monitoraggio non validi. Verificare le date e le condizioni registrate.';
+}
+$lombardExport = $_GET['lombard_export'] ?? '';
+if (is_string($lombardExport) && in_array($lombardExport, ['xlsx', 'pdf'], true)) {
+    if ($lombardError !== null || empty($lombardMonitor['rows'])) {
+        http_response_code(503);
+        exit('Storico Credit Lombard non disponibile per l esportazione.');
+    }
+    require_once __DIR__ . '/lib/credit_lombard_export.php';
+    if ($lombardExport === 'pdf') {
+        include __DIR__ . '/partials/credit_lombard_print.php';
+        exit;
+    }
+    if (!class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class)) {
+        http_response_code(503);
+        exit('Esportazione Excel non disponibile: manca PhpSpreadsheet.');
+    }
+    $book = lombard_export_workbook($lombardMonitor);
+    $temporary = fopen('php://temp/maxmemory:5242880', 'w+b');
+    if ($temporary === false) {
+        throw new RuntimeException('Impossibile preparare il file Excel.');
+    }
+    try {
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($temporary);
+        rewind($temporary);
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="credit_lombard_' . date('Ymd_His') . '.xlsx"');
+        header('Cache-Control: private, no-store');
+        fpassthru($temporary);
+    } finally {
+        fclose($temporary);
+        $book->disconnectWorksheets();
+    }
+    exit;
+}
 $warningThreshold = app_setting('account_reconciliation_warn_pct', null);
 $showReconciliationWarning = is_numeric($warningThreshold)
     && $metrics['difference_pct'] !== null
@@ -282,6 +381,8 @@ include __DIR__ . '/partials/header.php';
     <?php endforeach; ?>
 </section>
 <?php endif; ?>
+
+<?php include __DIR__ . '/partials/credit_lombard_monitor.php'; ?>
 
 <?php if ($confirmedTransfers): ?>
 <section class="panel">

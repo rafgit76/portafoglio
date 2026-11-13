@@ -1,0 +1,28 @@
+:root { color-scheme: light; font-family: Arial, sans-serif; color: #172c37; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #edf3f5; }
+.print-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem max(1rem, calc((100% - 1100px) / 2)); background: #fff; }
+.print-toolbar a { color: #087f78; font-weight: 700; }
+.print-toolbar button { border: 0; border-radius: 5px; padding: .75rem 1rem; color: #fff; background: #087f78; font-weight: 700; cursor: pointer; }
+main { max-width: 1100px; margin: 1.5rem auto; padding: 2rem; background: #fff; }
+.eyebrow { color: #087f78; font-size: .75rem; font-weight: 700; letter-spacing: .08em; }
+h1 { margin: .3rem 0; font-size: 1.8rem; }
+header p { color: #526a77; }
+aside { padding: .8rem 1rem; margin: 1.2rem 0; border-left: 4px solid #c98c16; background: #fff7e8; font-size: .85rem; line-height: 1.45; }
+table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+th, td { padding: .6rem .45rem; border-bottom: 1px solid #d4e1e6; text-align: right; }
+th { background: #e8f1f3; color: #24414b; }
+th:first-child, td:first-child { text-align: left; white-space: nowrap; }
+tbody tr:nth-child(even) { background: #f6f9fa; }
+.footnote { font-size: .75rem; color: #526a77; }
+@media (max-width: 700px) { main { overflow-x: auto; margin: 0; padding: 1rem; } table { min-width: 680px; } }
+@media print {
+    @page { size: A4 landscape; margin: 12mm; }
+    body { background: #fff; }
+    .print-toolbar { display: none; }
+    main { max-width: none; margin: 0; padding: 0; overflow: visible; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; }
+    th, td { padding: .42rem .3rem; }
+    aside { break-inside: avoid; }
+}

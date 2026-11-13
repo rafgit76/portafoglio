@@ -2,7 +2,19 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.8.4`.
+Versione corrente: `2.9.1`.
+
+## Monitoraggio Credit Lombard
+
+Lo storico giornaliero osservato si esporta in Excel con valori numerici e date filtrabili, oppure si apre in versione stampa e si salva in PDF dal browser. Gli export riportano lacune e natura indicativa dei calcoli; nessuno snapshot viene modificato.
+
+In **Patrimonio e liquidita** il monitoraggio usa solo gli snapshot dal giorno di attivazione dell unica linea Credit Lombard attiva. Calcola un utilizzo indicativo `max(0, -saldo contabile)`, senza sostituire il fido utilizzato ufficiale Fineco. Interessi giornalieri non arrotondati: `(min(utilizzo, plafond) * TAN + max(0, utilizzo - plafond) * tasso eccedenza) / 365`; il divisore resta 365 anche negli anni bisestili. Il tasso di eccedenza e un ipotesi contrattuale da confermare con Fineco, non una classificazione automatica di mora. I risultati non comprendono date valuta, cambi infragiornalieri o addebiti accessori e non sono conteggi ufficiali.
+
+Gli interessi osservati sono parziali se mancano saldi o tassi; nessun saldo viene propagato nei giorni mancanti. La proiezione al 31 dicembre usa solo gli interessi osservati nell anno dello snapshot e mantiene costanti tassi e plafond; la media dinamica sceglie la piu lunga tra 30, 14 e 7 giornate consecutive complete, oppure non e disponibile. Le lacune sono segnalate, anche nel grafico. L inserimento di nuove condizioni con decorrenza puo ricalcolare le stime ma non modifica gli snapshot.
+
+Per un database esistente, **prima esportare un backup completo** e verificare le condizioni personali con Fineco; quindi importare manualmente `sql/migration_2_9_0_lombard_rates.sql` una sola volta tramite phpMyAdmin. La migrazione crea soltanto la tabella dei tassi e inserisce il tasso iniziale dal 07/08/2026 senza sovrascrivere condizioni gia presenti. L attivazione della linea rimane quella registrata nell app. Non vengono automaticamente installate migrazioni da FTP. Prima della migrazione la sezione mostra un avviso senza impedire il resto della pagina.
+
+Test senza database: `php tests/credit_lombard_interest_test.php`.
 
 ## Export andamento patrimonio
 

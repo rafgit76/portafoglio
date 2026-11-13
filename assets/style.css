@@ -1709,6 +1709,20 @@ tbody tr.snapshot-row-min:hover {
     min-width: 0;
 }
 
+.lombard-monitor .cards { margin: 1rem 0; }
+.lombard-progress { height: 0.7rem; overflow: hidden; border-radius: 1rem; background: #d9e4e6; }
+.lombard-progress span { display: block; height: 100%; background: #16885a; }
+.lombard-progress-soft span { background: #079998; }
+.lombard-progress-mid span { background: #d48210; }
+.lombard-progress-high span { background: #c64b3b; }
+.lombard-progress-over span { background: #a5162b; }
+.lombard-overlimit { border: 2px solid #a5162b; font-weight: 700; }
+.lombard-chart { height: 340px; position: relative; }
+.lombard-history { margin-top: 1rem; }
+.lombard-history summary { cursor: pointer; font-weight: 700; }
+.lombard-history .table-wrap { margin: 1rem 0; }
+@media (max-width: 600px) { .lombard-chart { height: 260px; } }
+
 .ai-custom-form label {
     display: grid;
     gap: 0.35rem;
