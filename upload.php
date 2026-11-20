@@ -193,7 +193,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $parser = new FinecoXlsxParser();
-            $positions = $parser->parse($f['tmp_name']);
+            $positions = $parser->parse($f['tmp_name'], $detectedExtension);
             $inspection = $parser->inspectDossierMetadata($f['tmp_name']);
             if (!empty($inspection['reliable']) && (string) $inspection['detected_slot'] !== $portfolioSlot) {
                 $suggestedSlot = fineco_portfolio_import_slot((string) $inspection['detected_slot']);

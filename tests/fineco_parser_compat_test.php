@@ -57,7 +57,18 @@ try {
         }
     }
 
-    echo "OK: CSV con due separatori, XLS e XLSX importati senza deprecazioni.\n";
+    $uploadPath = $testDir . DIRECTORY_SEPARATOR . 'upload_temporaneo';
+    $paths[] = $uploadPath;
+    if (!copy($testDir . DIRECTORY_SEPARATOR . 'semicolon.csv', $uploadPath)) {
+        throw new RuntimeException('Impossibile simulare il file temporaneo di upload.');
+    }
+    $positions = $parser->parse($uploadPath, 'csv');
+    if (count($positions) !== 1 || $positions[0]->isin !== 'IE00TEST0001'
+        || abs($positions[0]->marketValue - 1200.0) > 0.000001) {
+        throw new RuntimeException('CSV temporaneo senza estensione non letto correttamente.');
+    }
+
+    echo "OK: CSV con due separatori, upload temporaneo, XLS e XLSX senza deprecazioni.\n";
 } finally {
     restore_error_handler();
     foreach ($paths as $path) {

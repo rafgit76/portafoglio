@@ -2,7 +2,15 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.9.1`.
+Versione corrente: `2.10.4`.
+
+## Andamento e storico quantita
+
+La pagina Andamento mostra una tabella compatta con estremi di valore e P/L rilevati: selezionando un importo si aprono le date e gli scarti, comprese tutte le date di pari merito. Lo scarto e l ultimo valore meno l estremo, con percentuale sul valore assoluto dell estremo; il numero di giorni trascorsi usa la ricorrenza piu recente e la data odierna. Se il titolo manca nell ultimo snapshot, gli scarti sono N/D. Gli importi sono valori di posizione, non prezzi unitari.
+
+La sottopagina Storico quantita confronta le rilevazioni disponibili di tutti i tipi di strumento, sommando i dossier. Una variazione indica la data dello snapshot, non necessariamente quella dell operazione; le assenze non diventano zero e eventuali snapshot intermedi senza dato sono evidenziati. Non e un registro ordini e non ricostruisce trasferimenti interni senza variazione del totale.
+
+Gemini 4 Neon puo apparire dopo l aggiornamento dei modelli solo se restituito dall API; tariffe standard indicative 3/15 USD per milione di token input/output, inclusi i token di ragionamento nell output. Neon richiede accesso e fatturazione idonei; nessun report viene generato automaticamente.
 
 ## Monitoraggio Credit Lombard
 
@@ -158,7 +166,7 @@ Test UI dell archivio: `node tests/ai_report_archive_ui_test.cjs` con Playwright
 
 Correzione v2.7.3: le stime mancanti nei report precedenti vengono ricostruite soltanto in lettura, se modello e consumi input/risposta/ragionamento sono noti. Valori archiviati validi (anche zero) non vengono sostituiti; se non si puo stimare il costo, si mostra `Non disponibile`. Nessuna riscrittura dell'archivio e nessuna nuova chiamata API per aggiornare la visualizzazione. I totali con stime mancanti sono parziali.
 
-Il primo prompt del confronto 3.7/3.8 resta invariato. Solo il tentativo correttivo di un report complessivo oltre 1400 parole usa un prompt di sintesi mirato con conteggio PHP e budget per sezione. Non si tronca il testo, non si allenta la validazione e non si aggiungono tentativi. I report registrano la nuova versione della pipeline `2026-09-02-general-length-repair-v13`. I consumi dei tentativi falliti senza report archiviato non sono compresi nei totali dell'archivio e vanno verificati nella console del provider.
+Il report complessivo del portafoglio accetta fino a 2000 parole, con un obiettivo indicativo di sintesi. Oltre il limite, il tentativo correttivo usa un prompt mirato con conteggio PHP e budget per sezione. Non si tronca il testo, restano attivi i controlli numerici e il massimo di due tentativi. I report registrano la versione della pipeline `2026-11-20-general-length-2000-v14`. I consumi dei tentativi falliti senza report archiviato non sono compresi nei totali dell'archivio e vanno verificati nella console del provider.
 
 Dalla v2.7.4, come concordato dopo gli errori `MAX_TOKENS`, solo il complessivo del portafoglio con `gemini-3.8-flash` usa `general_thinking_level = low`, configurabile anche tramite `PORTFOLIO_GEMINI_GENERAL_THINKING_LEVEL`. Il valore locale, se presente, ha precedenza. Giornalieri, settimanali, patrimonio, personalizzati e altri modelli continuano a usare `thinking_level` (Medium nella configurazione corrente). Nella sezione del complessivo e nel report archiviato compare il livello effettivo. Il confronto con il 3.7 Medium non e piu a parita di ragionamento. Non e stato aumentato il budget di 20000 token e non sono state aggiunte chiamate automatiche.
 

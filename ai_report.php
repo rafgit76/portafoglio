@@ -343,9 +343,9 @@ include __DIR__ . '/partials/header.php';
 
 <section class="panel">
     <h2>Modelli Gemini</h2>
-    <p>Puoi scegliere modello e sforzo prima di ogni report. L'elenco mostra i due Flash testuali piu recenti e, se restituiti dall'API, Hydrogen e Argon. La presenza nell'elenco non garantisce disponibilita, quota o autorizzazione alla generazione.</p>
+    <p>Puoi scegliere modello e sforzo prima di ogni report. L'elenco mostra i due Flash testuali piu recenti e, se restituiti dall'API, Hydrogen, Argon e Neon. La presenza nell'elenco non garantisce disponibilita, quota o autorizzazione alla generazione.</p>
     <p class="tiny-note">La scelta Predefinito mantiene il livello configurato per il report. Low puo ridurre tempi e consumo, ma non garantisce il completamento entro il timeout. Il piano Gemini e la fatturazione API possono essere distinti.</p>
-    <p class="tiny-note">Le tariffe mostrate sono stime standard per token input/output, basate sul listino verificato il 12/11/2026; non comprendono eventuali ricerche o altri costi. Per i modelli senza listino configurato il costo non e disponibile. La chiave resta sul server.</p>
+    <p class="tiny-note">Le tariffe sono stime standard per token input/output; listino Neon verificato il 20/11/2026. Non comprendono eventuali ricerche o altri costi e possono cambiare. Per i modelli senza listino configurato il costo non e disponibile. La chiave resta sul server.</p>
     <form method="post">
         <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="action" value="refresh_models">

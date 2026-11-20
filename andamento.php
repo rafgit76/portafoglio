@@ -1,68 +1,20 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/lib/andamento_data.php';
+require_once __DIR__ . '/lib/andamento_extremes.php';
 
 $pageTitle = 'Andamento';
 $pdo = db();
+$quantityMode = ($_GET['view'] ?? '') === 'quantity';
+$andamentoData = andamento_load_data($pdo, $quantityMode);
+$columns = $andamentoData['columns'];
+$orderedRows = $andamentoData['rows'];
 
 $assetTypeOrder = [
     'AZIONE' => 1,
     'ETF' => 2,
     'PAC' => 3,
 ];
-
-$columns = $pdo->query(
-    'SELECT DISTINCT
-        a.id,
-        a.asset_type,
-        a.name,
-        a.ticker,
-        a.isin
-     FROM pf_assets a
-     JOIN pf_snapshot_positions p ON p.asset_id = a.id
-     JOIN pf_snapshots s ON s.id = p.snapshot_id
-     WHERE a.asset_type IN ("AZIONE", "ETF", "PAC")
-     ORDER BY
-        CASE a.asset_type
-            WHEN "AZIONE" THEN 1
-            WHEN "ETF" THEN 2
-            WHEN "PAC" THEN 3
-            ELSE 99
-        END,
-        a.name ASC,
-        a.ticker ASC,
-        a.id ASC'
-)->fetchAll();
-
-$rows = [];
-
-$history = $pdo->query(
-    'SELECT s.snapshot_date, p.asset_id, SUM(p.quantity) AS quantity,
-            SUM(p.market_value) AS market_value, SUM(p.unrealized_pnl) AS unrealized_pnl
-     FROM pf_snapshots s
-     LEFT JOIN pf_snapshot_positions p ON p.snapshot_id = s.id
-     LEFT JOIN pf_assets a ON a.id = p.asset_id
-     WHERE p.asset_id IS NULL OR a.asset_type IN ("AZIONE", "ETF", "PAC")
-     GROUP BY s.id, s.snapshot_date, p.asset_id
-     ORDER BY s.snapshot_date ASC, p.asset_id ASC'
-)->fetchAll();
-
-foreach ($history as $entry) {
-    $snapshotDate = (string) $entry['snapshot_date'];
-    if (!isset($rows[$snapshotDate])) {
-        $rows[$snapshotDate] = [
-            'snapshot_date' => $snapshotDate,
-            'values' => [],
-        ];
-    }
-
-    if ($entry['asset_id'] !== null) {
-        $rows[$snapshotDate]['values'][(int) $entry['asset_id']] = [
-            'quantity' => (float) $entry['quantity'],
-            'market_value' => (float) $entry['market_value'],
-            'unrealized_pnl' => (float) $entry['unrealized_pnl'],
-        ];
-    }
-}
 
 foreach ($columns as &$column) {
     $type = (string) $column['asset_type'];
@@ -85,7 +37,6 @@ foreach ($columns as &$column) {
 }
 unset($column);
 
-$orderedRows = array_values($rows);
 $formatQuantity = static function (float $value): string {
     $formatted = number_format($value, 6, ',', '.');
     $formatted = rtrim($formatted, '0');
@@ -93,42 +44,29 @@ $formatQuantity = static function (float $value): string {
     return $formatted === '' ? '0' : $formatted;
 };
 $formatMoney = static fn(float $value): string => 'EUR ' . number_format($value, 2, ',', '.');
+if ($quantityMode) {
+    require_once __DIR__ . '/lib/andamento_quantity_history.php';
+    $quantityChanges = andamento_quantity_history($orderedRows, $columns);
+    $pageTitle = 'Storico quantita';
+    include __DIR__ . '/partials/header.php';
+    include __DIR__ . '/partials/andamento_quantity_history.php';
+    include __DIR__ . '/partials/footer.php';
+    exit;
+}
 $maxMarketByAsset = [];
 $maxPnlByAsset = [];
 $maxPnlDateByAsset = [];
 $minMarketByAsset = [];
 $minPnlByAsset = [];
+$assetExtremes = andamento_extremes($orderedRows, $columns);
 
 foreach ($columns as $column) {
     $assetId = (int) $column['id'];
-    $marketValues = [];
-    $pnlValues = [];
-
-    foreach ($orderedRows as $row) {
-        $value = $row['values'][$assetId] ?? null;
-        if ($value === null) {
-            continue;
-        }
-
-        $marketValues[] = (float) $value['market_value'];
-        $pnlValues[] = (float) $value['unrealized_pnl'];
-    }
-
-    $maxMarketByAsset[$assetId] = $marketValues ? max($marketValues) : null;
-    $maxPnlByAsset[$assetId] = $pnlValues ? max($pnlValues) : null;
-    $minMarketByAsset[$assetId] = $marketValues ? min($marketValues) : null;
-    $minPnlByAsset[$assetId] = $pnlValues ? min($pnlValues) : null;
-
-    $maxPnlDateByAsset[$assetId] = null;
-    if ($maxPnlByAsset[$assetId] !== null) {
-        foreach ($orderedRows as $row) {
-            $value = $row['values'][$assetId] ?? null;
-            if ($value !== null && abs((float) $value['unrealized_pnl'] - (float) $maxPnlByAsset[$assetId]) < 0.00001) {
-                $maxPnlDateByAsset[$assetId] = (string) $row['snapshot_date'];
-                break;
-            }
-        }
-    }
+    $maxMarketByAsset[$assetId] = $assetExtremes[$assetId]['market_value']['max']['value'] ?? null;
+    $minMarketByAsset[$assetId] = $assetExtremes[$assetId]['market_value']['min']['value'] ?? null;
+    $maxPnlByAsset[$assetId] = $assetExtremes[$assetId]['unrealized_pnl']['max']['value'] ?? null;
+    $minPnlByAsset[$assetId] = $assetExtremes[$assetId]['unrealized_pnl']['min']['value'] ?? null;
+    $maxPnlDateByAsset[$assetId] = $assetExtremes[$assetId]['unrealized_pnl']['max']['dates'][0] ?? null;
 }
 
 if (($_GET['export'] ?? '') === 'xlsx') {
@@ -261,11 +199,14 @@ main.container {
             <h2>Andamento storico per titolo</h2>
             <p class="tiny-note">Tabella unica ordinabile. Un click su una colonna la ordina in modo crescente o decrescente.</p>
         </div>
-        <span class="muted-small">
-            Snapshot: <?= count($orderedRows) ?> | Titoli: <?= count($columns) ?> | Colonne dati: <?= count($columns) * 3 ?>
-        </span>
+        <div class="andamento-hero-actions"><span class="muted-small">Snapshot: <?= count($orderedRows) ?> | Titoli: <?= count($columns) ?> | Colonne dati: <?= count($columns) * 3 ?></span>
+            <a class="btn btn-secondary" href="<?= e(app_base_path()) ?>/andamento.php?view=quantity">Storico quantit&agrave;</a></div>
     </div>
 </section>
+
+<?php if ($orderedRows && $columns): ?>
+    <?php include __DIR__ . '/partials/andamento_extremes.php'; ?>
+<?php endif; ?>
 
 <section class="panel">
     <?php if (!$orderedRows || !$columns): ?>

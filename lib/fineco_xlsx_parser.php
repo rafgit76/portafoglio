@@ -64,9 +64,10 @@ final class FinecoXlsxParser
         'var_euro' => true,
     ];
 
-    public function parse(string $spreadsheetPath): array
+    public function parse(string $spreadsheetPath, ?string $detectedExtension = null): array
     {
-        if (strtolower(pathinfo($spreadsheetPath, PATHINFO_EXTENSION)) === 'csv') {
+        $extension = strtolower($detectedExtension ?? pathinfo($spreadsheetPath, PATHINFO_EXTENSION));
+        if ($extension === 'csv') {
             return $this->parseCsv($spreadsheetPath);
         }
 
@@ -74,7 +75,7 @@ final class FinecoXlsxParser
             return $this->parseWithPhpSpreadsheet($spreadsheetPath);
         }
 
-        if (strtolower(pathinfo($spreadsheetPath, PATHINFO_EXTENSION)) !== 'xlsx') {
+        if ($extension !== 'xlsx') {
             throw new RuntimeException('Per importare file .xls e\' necessario caricare la cartella vendor completa.');
         }
 

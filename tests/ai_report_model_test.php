@@ -20,6 +20,7 @@ $assert($close(ai_report_estimate_cost_usd('gemini-3.7-flash', 15000, 2000, 3000
 $assert($close(ai_report_estimate_cost_usd('gemini-3.5-flash-lite', 1000000, 1000000), 2.80), 'tariffe storiche Flash Lite invariate');
 $assert(ai_report_estimate_cost_usd('unknown-model', 1000, 1000) === null, 'modello sconosciuto senza costo inventato');
 $assert($close(ai_report_estimate_cost_usd('gemini-4-hydrogen', 1000000, 1000000), 9.00), 'tariffe Hydrogen input e output');
+$assert($close(ai_report_estimate_cost_usd('gemini-4-neon', 1000000, 1000000, 1000000), 33.00), 'tariffe Neon input output e ragionamento');
 $assert($close(ai_report_estimate_cost_usd('gemini-3.8-flash', 1000000, 1000000, 0, '2026-12-31'), 4.50), '3.8 listino promozionale');
 $assert($close(ai_report_estimate_cost_usd('gemini-3.8-flash', 1000000, 1000000, 0, '2027-01-01'), 9.00), '3.8 listino alla scadenza');
 $assert($close(ai_report_estimate_cost_usd('gemini-4-argon', 1000000, 1000000, 0, '2026-11-30'), 12.00), 'Argon listino promozionale');
@@ -38,9 +39,11 @@ $assert($available === ['gemini-3.8-flash', 'gemini-4-hydrogen'], 'elenco modell
 $curated = ai_report_curate_models([
     'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.10-flash',
     'gemini-3.11-flash-preview', 'gemini-3.8-flash-lite', 'gemini-3.8-omni',
-    'gemini-4-hydrogen', 'gemini-4-argon', 'gemini-4-carbon', 'gemini-4-argon',
+    'gemini-4-hydrogen', 'gemini-4-argon', 'gemini-4-carbon', 'gemini-4-argon', 'gemini-4-neon',
 ]);
-$assert($curated === ['gemini-3.10-flash', 'gemini-3.8-flash', 'gemini-4-hydrogen', 'gemini-4-argon'], 'solo due Flash stabili piu recenti, Hydrogen e Argon');
+$assert($curated === ['gemini-3.10-flash', 'gemini-3.8-flash', 'gemini-4-hydrogen', 'gemini-4-argon', 'gemini-4-neon'], 'solo due Flash stabili piu recenti, Hydrogen, Argon e Neon');
+$assert(ai_report_filter_available_models([['name' => 'models/gemini-4-neon', 'supportedGenerationMethods' => ['generateContent']]]) === ['gemini-4-neon'], 'Neon restituito da Google ammesso nel menu');
+$assert(ai_report_filter_available_models([['name' => 'models/gemini-4-neon', 'supportedGenerationMethods' => ['countTokens']]]) === [], 'Neon senza generazione non ammesso');
 $assert(ai_report_curate_models(['gemini-4-carbon', 'gemini-omni', 'gemini-3.8-flash-tts']) === [], 'modelli esclusi anche da sessioni precedenti');
 $assert(ai_report_validate_selected_model('gemini-4-hydrogen', $available) === 'gemini-4-hydrogen', 'modello scelto validato');
 foreach (['gemini-other', ['gemini-4-hydrogen']] as $invalidModel) {
@@ -124,10 +127,11 @@ $assert($stats['estimated_cost_usd'] === 0.0 && $stats['missing_costs'] === 0, '
 
 $assert(ai_report_word_count('') === 0, 'conteggio testo vuoto');
 $assert(ai_report_word_count("  EUR 100,00\n\t### Sintesi  ") === 4, 'conteggio include numeri e intestazioni');
-$longDraft = str_repeat('dato ', 1500);
+$longDraft = str_repeat('dato ', 2001);
 $repair = ai_report_build_repair_prompt('ORIGINAL_HISTORY_SENTINEL', $longDraft, 'Troppo lungo', 'VERIFIED_FACTS_SENTINEL', 'general');
-$assert(str_contains($repair, '1500 parole'), 'correttivo contiene conteggio effettivo');
-$assert(str_contains($repair, '1050-1150') && str_contains($repair, '1400'), 'correttivo compatto mantiene limite');
+$assert(str_contains($repair, '2001 parole'), 'correttivo contiene conteggio effettivo');
+$assert(str_contains($repair, '1050-1150') && str_contains($repair, '2000'), 'correttivo compatto rispetta il nuovo limite');
+$assert(str_contains(ai_report_system_instruction(), '2000 parole') && str_contains(ai_report_build_prompt('{}', 'Fatti'), '2000 parole'), 'prompt coerenti con il nuovo limite');
 $assert(!str_contains($repair, 'ORIGINAL_HISTORY_SENTINEL'), 'correttivo lunghezza non reinvia tutto lo storico');
 $assert(str_contains($repair, 'VERIFIED_FACTS_SENTINEL') && str_contains($repair, $longDraft), 'fatti e bozza conservati nel correttivo');
 $headings = [
@@ -153,18 +157,18 @@ $payload = [
 $requiredFacts = '01/09/2026 02/09/2026 EUR 100,00 EUR 110,00 EUR +10,00 EUR 10,00 EUR 15,00 EUR +5,00';
 $base = implode("\n", $headings) . "\n" . $requiredFacts;
 $reportOfLength = static fn (int $words): string => $base . str_repeat(' dato', $words - ai_report_word_count($base));
-foreach ([950, 1100, 1400] as $words) {
+foreach ([950, 1100, 1400, 1658, 2000] as $words) {
     ai_report_validate_generated_text($reportOfLength($words), 'STOP', $payload);
     $assert(true, 'validazione lunghezza ammessa ' . $words);
 }
-foreach ([949, 1401] as $words) {
+foreach ([949, 2001] as $words) {
     $rejected = false;
     try {
         ai_report_validate_generated_text($reportOfLength($words), 'STOP', $payload);
     } catch (RuntimeException $error) {
         $rejected = true;
-        if ($words === 1401) {
-            $assert(str_contains($error->getMessage(), '1401'), 'errore espone lunghezza reale');
+        if ($words === 2001) {
+            $assert(str_contains($error->getMessage(), '2001') && str_contains($error->getMessage(), '2000'), 'errore espone lunghezza reale e limite');
         }
     }
     $assert($rejected, 'validazione rifiuta lunghezza ' . $words);
@@ -193,6 +197,7 @@ $assert(ai_report_thinking_level(array_replace($settings, ['model' => 'gemini-3.
 $assert(ai_report_thinking_level(array_replace($settings, ['model' => 'gemini-4-hydrogen']), 'general') === 'medium', 'Hydrogen usa Medium per il complessivo');
 $hydrogenSettings = array_replace($settings, ['model' => 'gemini-4-hydrogen']);
 $assert(ai_report_resolve_thinking_level($hydrogenSettings, 'general', 'low') === 'low', 'Hydrogen Low scelto per singolo report');
+$assert(ai_report_resolve_thinking_level(array_replace($settings, ['model' => 'gemini-4-neon']), 'general', 'high') === 'high', 'Neon usa i livelli esistenti');
 $assert(ai_report_resolve_thinking_level($hydrogenSettings, 'general', '') === 'medium', 'scelta predefinita Hydrogen invariata');
 $assert(ai_report_resolve_thinking_level($settings, 'general', '') === 'low', 'scelta predefinita 3.8 generale resta Low');
 $assert(ai_report_resolve_thinking_level($settings, 'changes', 'high') === 'high', 'High scelto esplicitamente');

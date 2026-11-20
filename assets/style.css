@@ -2766,6 +2766,34 @@ tbody tr.snapshot-row-min:hover {
     border-radius: 8px;
 }
 
+.andamento-extremes-table-wrap { overflow-x: auto; border-radius: 8px; }
+.andamento-extremes-table { width: 100%; min-width: 790px; }
+.andamento-extremes-table th, .andamento-extremes-table td { padding: .4rem .55rem; vertical-align: top; }
+.andamento-extremes-table th:not(:first-child), .andamento-extremes-table td { text-align: right; white-space: nowrap; }
+.andamento-extremes-table thead th { font-size: .76rem; }
+.andamento-extremes-table tbody th { text-align: left; font-size: .8rem; }
+.andamento-extremes-table tbody th a { color: var(--title); text-decoration: none; }
+.andamento-extremes-table tbody th a:hover { color: var(--primary-strong); text-decoration: underline; }
+.andamento-extreme-detail > summary { cursor: pointer; list-style: none; display: inline-block; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: .76rem; text-decoration: underline dotted; text-underline-offset: 3px; }
+.andamento-extreme-detail > summary::-webkit-details-marker { display: none; }
+.andamento-extreme-detail > summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.andamento-extreme-max > summary { color: var(--ok); }
+.andamento-extreme-min > summary { color: var(--bad); }
+.andamento-extreme-popover { margin-top: 8px; padding: 14px; width: 300px; max-width: 100%; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow); font-size: .8rem; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.andamento-extreme-popover p { margin: .4rem 0; line-height: 1.4; }
+.andamento-extreme-explanation { color: var(--muted); font-size: .72rem; }
+.andamento-extreme-dates > summary { color: var(--primary-strong); cursor: pointer; }
+.andamento-extreme-dates p { max-height: 7rem; overflow: auto; }
+.andamento-extreme-close { display: none; margin-top: .5rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-soft); padding: .3rem .6rem; color: var(--primary-strong); cursor: pointer; }
+.andamento-extremes-enhanced .andamento-extreme-popover { position: fixed; z-index: 1000; width: 300px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto; margin: 0; }
+.andamento-extremes-enhanced .andamento-extreme-close { display: inline-block; }
+.andamento-hero-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 12px; }
+.quantity-history-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.quantity-history-filter select { width: auto; max-width: 100%; }
+.quantity-history-table { min-width: 920px; }
+
+@media print { .andamento-extremes { display: none !important; } }
+
 .andamento-table {
     min-width: 980px;
 }

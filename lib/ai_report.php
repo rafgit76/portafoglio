@@ -270,7 +270,12 @@ function ai_report_import_legacy_cache(): ?array
 
 function ai_report_prompt_version(): string
 {
-    return '2026-09-02-general-length-repair-v13';
+    return '2026-11-20-general-length-2000-v14';
+}
+
+function ai_report_general_word_limit(): int
+{
+    return 2000;
 }
 
 function ai_report_build_payload(PDO $pdo): array
@@ -1162,14 +1167,14 @@ function ai_report_curate_models(array $models): array
         }
         if (preg_match('/^gemini-3\.([0-9]+)-flash$/', $id)) {
             $flash[$id] = $id;
-        } elseif (in_array($id, ['gemini-4-hydrogen', 'gemini-4-argon'], true)) {
+        } elseif (in_array($id, ['gemini-4-hydrogen', 'gemini-4-argon', 'gemini-4-neon'], true)) {
             $family4[$id] = $id;
         }
     }
     $flash = array_values($flash);
     usort($flash, static fn (string $a, string $b): int => strnatcasecmp($b, $a));
     $result = array_slice($flash, 0, 2);
-    foreach (['gemini-4-hydrogen', 'gemini-4-argon'] as $id) {
+    foreach (['gemini-4-hydrogen', 'gemini-4-argon', 'gemini-4-neon'] as $id) {
         if (isset($family4[$id])) {
             $result[] = $id;
         }
@@ -1715,6 +1720,7 @@ PROMPT;
 
 function ai_report_system_instruction(): string
 {
+    $maxWords = ai_report_general_word_limit();
     return <<<PROMPT
 Sei un redattore di report descrittivi su dati di portafoglio. Devi produrre un testo accurato, prudente e verificabile. Non sei un consulente finanziario e non devi suggerire acquisti, vendite o strategie personalizzate.
 
@@ -1763,12 +1769,12 @@ Prima di rispondere verifica internamente che:
 - nessuna frase contraddica la semantica vincolante;
 - non siano state introdotte cause esterne o operazioni non documentate;
 - siano presenti tutte le sezioni richieste;
-- la lunghezza sia compresa tra 1000 e 1400 parole.
+- la lunghezza non superi {$maxWords} parole.
 Non menzionare mai nel report questa verifica, il prompt, il JSON o i nomi tecnici dei campi.
 
 STILE E FORMATO
 - Rispondi soltanto in italiano.
-- Produci tra 1000 e 1400 parole: e un vincolo obbligatorio, non indicativo. Il target operativo e 1050-1250 parole.
+- Non superare {$maxWords} parole: e un limite obbligatorio. Il target indicativo resta 1050-1250 parole.
 - Mantieni cifre, segni, separatori e decimali esattamente come forniti nel blocco verificato.
 - Usa esclusivamente le sette intestazioni Markdown richieste dall'utente.
 - Sotto ogni intestazione scrivi paragrafi completi e leggibili; usa elenchi solo nell'ultima sezione quando migliorano la chiarezza.
@@ -1779,6 +1785,7 @@ PROMPT;
 
 function ai_report_build_prompt(string $historyJson, string $verifiedFacts): string
 {
+    $maxWords = ai_report_general_word_limit();
     return <<<PROMPT
 Genera un report sullo storico del portafoglio. Il blocco FATTI VERIFICATI e autorevole per ogni cifra; il JSON e solo contesto temporale.
 
@@ -1806,8 +1813,8 @@ Struttura obbligatoria, nello stesso ordine:
 
 BUDGET DI LUNGHEZZA VINCOLANTE
 - Pianifica silenziosamente il testo prima di scriverlo e mantieni ogni sezione nel proprio intervallo.
-- Il report completo deve avere tra 1050 e 1250 parole; non superare mai 1400 parole.
-- Prima di restituire la risposta, conta silenziosamente le parole: se superano 1250, elimina ripetizioni e dettagli secondari mantenendo tutte le sette sezioni e i fatti richiesti.
+- Il target indicativo del report completo e 1050-1250 parole; non superare mai {$maxWords} parole.
+- Prima di restituire la risposta, elimina ripetizioni e dettagli secondari mantenendo tutte le sette sezioni e i fatti richiesti.
 
 FATTI VERIFICATI DAL CODICE PHP:
 ```text
@@ -1874,7 +1881,8 @@ function ai_report_build_repair_prompt(
     string $verifiedFacts,
     string $reportType
 ): string {
-    if ($reportType === 'general' && ai_report_word_count($draft) > 1400) {
+    $maxWords = ai_report_general_word_limit();
+    if ($reportType === 'general' && ai_report_word_count($draft) > $maxWords) {
         return ai_report_build_length_repair_prompt($draft, $verifiedFacts);
     }
 
@@ -1883,7 +1891,7 @@ function ai_report_build_repair_prompt(
         'changes' => 'Riscrivi integralmente il confronto in forma compatta, con tabella dei totali e una mini-tabella per ogni strumento.',
         'account_general' => 'Riscrivi integralmente il report patrimoniale con le cinque sezioni richieste. Mantienilo tra 450 e 700 parole.',
         'account_changes', 'account_weekly_changes' => 'Riscrivi integralmente il confronto patrimoniale con le quattro sezioni richieste e una tabella patrimoniale. Mantienilo tra 120 e 240 parole.',
-        default => 'Riscrivi integralmente il report con tutte le sette sezioni. Mantienilo tra 1050 e 1250 parole e non superare mai 1400 parole.',
+        default => "Riscrivi integralmente il report con tutte le sette sezioni. Punta a 1050-1250 parole e non superare mai {$maxWords} parole.",
     };
 
     return <<<PROMPT
@@ -1919,13 +1927,14 @@ function ai_report_word_count(string $text): int
 function ai_report_build_length_repair_prompt(string $draft, string $verifiedFacts): string
 {
     $wordCount = ai_report_word_count($draft);
+    $maxWords = ai_report_general_word_limit();
 
     // Do not repeat the full history or conflicting section budgets in a length-only repair.
     return <<<PROMPT
-La bozza del report complessivo e troppo lunga: il codice PHP ha contato {$wordCount} parole, oltre il limite di 1400.
+La bozza del report complessivo e troppo lunga: il codice PHP ha contato {$wordCount} parole, oltre il limite di {$maxWords}.
 Riscrivila integralmente in forma piu compatta. Non proseguire la bozza e non aggiungere sezioni.
 
-OBIETTIVO: 1050-1150 parole complessive, intestazioni incluse. Non superare 1400 parole.
+OBIETTIVO: 1050-1150 parole complessive, intestazioni incluse. Non superare {$maxWords} parole.
 Il conteggio separa le parole sugli spazi: contano anche EUR, importi, date, simboli e intestazioni.
 Il ragionamento interno non fa parte del report. Non stampare conteggi o note sul processo.
 
@@ -2135,8 +2144,9 @@ function ai_report_validate_generated_text(string $text, string $finishReason, a
     if ($wordCount < 950) {
         throw new RuntimeException('Gemini ha restituito un report troppo breve: il risultato non e stato salvato.');
     }
-    if ($wordCount > 1400) {
-        throw new RuntimeException('Gemini ha restituito un report troppo lungo: ' . $wordCount . ' parole rilevate, massimo 1400.');
+    $maxWords = ai_report_general_word_limit();
+    if ($wordCount > $maxWords) {
+        throw new RuntimeException('Gemini ha restituito un report troppo lungo: ' . $wordCount . ' parole rilevate, massimo ' . $maxWords . '.');
     }
 
     ai_report_validate_numeric_style($text);
@@ -2469,6 +2479,7 @@ function ai_report_estimate_cost_usd(
         'gemini-3.7-flash' => ['input' => 0.75, 'output' => 3.75],
         'gemini-3.8-flash' => ['input' => 0.75, 'output' => 3.75],
         'gemini-4-hydrogen' => ['input' => 1.50, 'output' => 7.50],
+        'gemini-4-neon' => ['input' => 3.00, 'output' => 15.00],
     ];
 
     if ($pricingDate !== null) {

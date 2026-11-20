@@ -2,6 +2,53 @@
 
 return [
     [
+        'version' => '2.10.4',
+        'date' => '2026-11-20',
+        'title' => 'Correzione anteprima CSV',
+        'changes' => [
+            'Corretto il riconoscimento dei file CSV Fineco nella fase di anteprima.',
+            'Nessuna migrazione o modifica agli snapshot.',
+        ],
+    ],
+    [
+        'version' => '2.10.3',
+        'date' => '2026-11-20',
+        'title' => 'Limite del report complessivo',
+        'changes' => [
+            'Report complessivo del portafoglio: limite massimo aumentato a 2000 parole, con controlli numerici e sezioni obbligatorie invariati.',
+            'Nessuna migrazione o modifica agli snapshot.',
+        ],
+    ],
+    [
+        'version' => '2.10.2',
+        'date' => '2026-11-20',
+        'title' => 'Quantita nei dettagli degli estremi',
+        'changes' => [
+            'Tabella dei massimi e minimi piu compatta; dettagli con quantita dello snapshot per ogni data del record.',
+            'Nessuna migrazione o modifica agli snapshot.',
+        ],
+    ],
+    [
+        'version' => '2.10.1',
+        'date' => '2026-11-20',
+        'title' => 'Riepilogo estremi compatto',
+        'changes' => [
+            'Massimi e minimi per titolo in tabella compatta, con dettagli apribili su data e distanza.',
+            'Dati e formule invariati; nessuna migrazione o modifica agli snapshot.',
+        ],
+    ],
+    [
+        'version' => '2.10.0',
+        'date' => '2026-11-20',
+        'title' => 'Estremi, storico quantita e Gemini Neon',
+        'changes' => [
+            'Andamento mostra massimi e minimi per titolo con date, scarti dall ultimo snapshot e giorni trascorsi.',
+            'Storico quantita ricostruito dagli snapshot per tutti i tipi di titolo, senza dedurre operazioni.',
+            'Gemini 4 Neon selezionabile se restituito dall API, con tariffa indicativa; modello predefinito invariato.',
+            'Nessuna migrazione o modifica agli snapshot esistenti.',
+        ],
+    ],
+    [
         'version' => '2.9.1',
         'date' => '2026-11-13',
         'title' => 'Export storico Credit Lombard',
