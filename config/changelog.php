@@ -2,6 +2,24 @@
 
 return [
     [
+        'version' => '2.10.6',
+        'date' => '2026-11-23',
+        'title' => 'Nomi delle obbligazioni in Andamento',
+        'changes' => [
+            'Le intestazioni delle obbligazioni mostrano il nome completo invece del solo ticker.',
+            'Nessuna modifica agli snapshot o migrazione.',
+        ],
+    ],
+    [
+        'version' => '2.10.5',
+        'date' => '2026-11-23',
+        'title' => 'Filtro strumenti in Andamento',
+        'changes' => [
+            'Filtro per ETF, obbligazioni, azioni e fondi PAC nella tabella, nel riepilogo e nell export Excel.',
+            'La vista Tutti include anche le obbligazioni; nessuna modifica agli snapshot o migrazione.',
+        ],
+    ],
+    [
         'version' => '2.10.4',
         'date' => '2026-11-20',
         'title' => 'Correzione anteprima CSV',

@@ -2788,6 +2788,13 @@ tbody tr.snapshot-row-min:hover {
 .andamento-extremes-enhanced .andamento-extreme-popover { position: fixed; z-index: 1000; width: 300px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto; margin: 0; }
 .andamento-extremes-enhanced .andamento-extreme-close { display: inline-block; }
 .andamento-hero-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 12px; }
+.andamento-type-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; margin-top: .9rem; }
+.andamento-type-filter label { font-weight: 700; color: var(--title); }
+.andamento-type-filter select { width: auto; min-width: 10rem; }
+@media (max-width: 700px) {
+    .andamento-page-header { flex-direction: column; align-items: stretch; }
+    .andamento-hero-actions { justify-content: flex-start; }
+}
 .quantity-history-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .quantity-history-filter select { width: auto; max-width: 100%; }
 .quantity-history-table { min-width: 920px; }
@@ -2795,14 +2802,14 @@ tbody tr.snapshot-row-min:hover {
 @media print { .andamento-extremes { display: none !important; } }
 
 .andamento-table {
-    min-width: 980px;
+    min-width: max-content;
 }
 
 .andamento-table th,
 .andamento-table td {
     vertical-align: top;
     white-space: nowrap;
-    padding: 0.42rem 0.34rem;
+    padding: 0.4rem 0.28rem;
 }
 
 .sticky-col {
@@ -2825,7 +2832,7 @@ tbody tr.snapshot-row-min:hover {
 }
 
 .mono-cell {
-    min-width: 74px;
+    min-width: 70px;
     font-size: 0.78rem;
     text-align: right;
     position: relative;
@@ -2836,7 +2843,7 @@ tbody tr.snapshot-row-min:hover {
 }
 
 .mono-cell-qty {
-    min-width: 48px;
+    min-width: 44px;
 }
 
 .cell-main-value {
@@ -2898,6 +2905,12 @@ tbody tr.snapshot-row-min:hover {
     color: var(--primary-strong);
     text-decoration: underline;
     text-underline-offset: 0.15em;
+}
+
+.andamento-heading-bond {
+    max-width: 140px;
+    word-break: normal;
+    overflow-wrap: anywhere;
 }
 
 .andamento-heading-metric {
@@ -3430,6 +3443,7 @@ tbody tr.snapshot-row-min:hover {
     }
 
     .andamento-toolbar,
+    .andamento-type-filter,
     .andamento-pagination,
     .andamento-export-actions {
         display: none !important;

@@ -6,9 +6,25 @@ require_once __DIR__ . '/lib/andamento_extremes.php';
 $pageTitle = 'Andamento';
 $pdo = db();
 $quantityMode = ($_GET['view'] ?? '') === 'quantity';
-$andamentoData = andamento_load_data($pdo, $quantityMode);
+$andamentoData = andamento_load_data($pdo, true);
 $columns = $andamentoData['columns'];
 $orderedRows = $andamentoData['rows'];
+$assetTypeOptions = [
+    'all' => 'Tutti',
+    'ETF' => 'ETF',
+    'BTP' => 'Obbligazioni',
+    'AZIONE' => 'Azioni',
+    'PAC' => 'Fondi PAC',
+];
+$requestedAssetType = $_GET['asset_type'] ?? 'all';
+$selectedAssetType = is_string($requestedAssetType) && isset($assetTypeOptions[$requestedAssetType])
+    ? $requestedAssetType : 'all';
+if (!$quantityMode && $selectedAssetType !== 'all') {
+    $columns = array_values(array_filter(
+        $columns,
+        static fn(array $column): bool => (string) $column['asset_type'] === $selectedAssetType
+    ));
+}
 
 $assetTypeOrder = [
     'AZIONE' => 1,
@@ -33,6 +49,9 @@ foreach ($columns as &$column) {
     } else {
         $column['label'] = $name;
         $column['short_label'] = mb_strimwidth($name, 0, 14, '...');
+    }
+    if ($type === 'BTP' && $name !== '') {
+        $column['short_label'] = $name;
     }
 }
 unset($column);
@@ -86,7 +105,7 @@ if (($_GET['export'] ?? '') === 'xlsx') {
 
     $generatedAt = (new DateTimeImmutable('now'))->format('Y-m-d H:i');
     $sheet->setCellValue('A1', 'Andamento storico per titolo');
-    $sheet->setCellValue('A2', 'Generato il ' . $generatedAt . ' - Snapshot: ' . count($orderedRows) . ' - Titoli: ' . count($columns));
+    $sheet->setCellValue('A2', 'Generato il ' . $generatedAt . ' - Strumenti: ' . $assetTypeOptions[$selectedAssetType] . ' - Snapshot: ' . count($orderedRows) . ' - Titoli: ' . count($columns));
 
     $headerRow = 4;
     $metricRow = 5;
@@ -194,10 +213,19 @@ main.container {
 }
 </style>
 <section class="panel">
-    <div class="panel-head">
+    <div class="panel-head andamento-page-header">
         <div>
             <h2>Andamento storico per titolo</h2>
-            <p class="tiny-note">Tabella unica ordinabile. Un click su una colonna la ordina in modo crescente o decrescente.</p>
+            <p class="tiny-note">Tabella unica ordinabile. Un click su una colonna la ordina in modo crescente o decrescente. Categoria: <?= e($assetTypeOptions[$selectedAssetType]) ?>.</p>
+            <form class="andamento-type-filter" method="get" action="<?= e(app_base_path()) ?>/andamento.php">
+                <label for="andamentoAssetType">Strumenti</label>
+                <select id="andamentoAssetType" name="asset_type" onchange="this.form.requestSubmit()">
+                    <?php foreach ($assetTypeOptions as $typeCode => $typeLabel): ?>
+                        <option value="<?= e($typeCode) ?>"<?= $selectedAssetType === $typeCode ? ' selected' : '' ?>><?= e($typeLabel) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <button class="btn-secondary btn-sm" type="submit">Applica</button>
+            </form>
         </div>
         <div class="andamento-hero-actions"><span class="muted-small">Snapshot: <?= count($orderedRows) ?> | Titoli: <?= count($columns) ?> | Colonne dati: <?= count($columns) * 3 ?></span>
             <a class="btn btn-secondary" href="<?= e(app_base_path()) ?>/andamento.php?view=quantity">Storico quantit&agrave;</a></div>
@@ -209,8 +237,10 @@ main.container {
 <?php endif; ?>
 
 <section class="panel">
-    <?php if (!$orderedRows || !$columns): ?>
+    <?php if (!$orderedRows): ?>
         <p>Dati insufficienti per costruire l'andamento. Servono snapshot con posizioni salvate.</p>
+    <?php elseif (!$columns): ?>
+        <p>Nessun titolo della categoria selezionata negli snapshot disponibili.</p>
     <?php else: ?>
         <div class="andamento-toolbar">
             <span class="tiny-note">Ordina cliccando l'intestazione della colonna. Le evidenziazioni MIN/MAX restano solo su VAL e P/L.</span>
@@ -239,7 +269,7 @@ main.container {
                                 colspan="3"
                                 title="<?= e($column['label']) ?> - <?= e($column['asset_type']) ?>"
                             >
-                                <a class="andamento-heading-title andamento-heading-link" href="<?= e(app_base_path()) ?>/asset.php?id=<?= (int) $column['id'] ?>"><?= e($column['short_label']) ?></a>
+                                <a class="andamento-heading-title andamento-heading-link<?= $column['asset_type'] === 'BTP' ? ' andamento-heading-bond' : '' ?>" href="<?= e(app_base_path()) ?>/asset.php?id=<?= (int) $column['id'] ?>"><?= e($column['short_label']) ?></a>
                             </th>
                         <?php endforeach; ?>
                     </tr>
@@ -364,7 +394,7 @@ main.container {
         <div class="andamento-pagination andamento-pagination-bottom" id="andamentoPagerBottom"></div>
 
         <div class="andamento-export-actions">
-            <a class="btn export-btn export-btn-excel" href="<?= e(app_base_path()) ?>/andamento.php?export=xlsx">
+            <a class="btn export-btn export-btn-excel" href="<?= e(app_base_path()) ?>/andamento.php?export=xlsx&amp;asset_type=<?= e(rawurlencode($selectedAssetType)) ?>">
                 <span class="export-file-icon" aria-hidden="true">XLS</span>
                 <span>Esporta Excel</span>
             </a>
