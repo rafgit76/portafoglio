@@ -29,9 +29,13 @@ const server = http.createServer((req, res) => {
     const base = `http://127.0.0.1:${server.address().port}`;
     const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_BIN || undefined });
     try {
-        for (const width of [1280, 375]) {
+        for (const width of [2560, 1920, 1280, 768, 375]) {
             const page = await browser.newPage({ viewport: { width, height: 900 } });
             await page.goto(base + '/andamento.php');
+            const mainBounds = await page.locator('main.container').boundingBox();
+            assert(mainBounds.width >= width - 60, `contenuti sufficientemente larghi a ${width}px`);
+            assert(mainBounds.x >= 10, `margine laterale leggibile a ${width}px`);
+            assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'nessuno scorrimento orizzontale della pagina');
             assert.equal(await page.locator('.andamento-extremes-table tbody tr').count(), 5);
             await Promise.all([
                 page.waitForURL('**/andamento.php?asset_type=ETF'),
@@ -59,9 +63,23 @@ const server = http.createServer((req, res) => {
             const bonds = page.locator('#andamentoTable .andamento-heading-bond');
             assert.equal(await bonds.count(), 3);
             assert.deepEqual(await bonds.allTextContents(), ['BTP test', 'BTP-13GN27 VALORE SU', 'BTP-13GN27 VALSU CUM']);
+            if (width === 375) {
+                const wrapper = page.locator('.andamento-table-wrap');
+                const sticky = page.locator('#andamentoTable tbody .sticky-col').first();
+                const stickyHeader = page.locator('#andamentoTable thead .sticky-col');
+                const before = await sticky.boundingBox();
+                const headerBefore = await stickyHeader.boundingBox();
+                const scrollLeft = await wrapper.evaluate((element) => { element.scrollLeft = 180; return element.scrollLeft; });
+                const after = await sticky.boundingBox();
+                const headerAfter = await stickyHeader.boundingBox();
+                assert(scrollLeft > 0 && Math.abs(before.x - after.x) < 1, `data fissa durante lo scorrimento: scroll=${scrollLeft}, prima=${before.x}, dopo=${after.x}`);
+                assert(Math.abs(headerBefore.x - headerAfter.x) < 1, 'intestazione Data fissa durante lo scorrimento');
+            }
             if (process.env.ANDAMENTO_FILTER_SCREENSHOT_DIR) {
                 await page.screenshot({ path: path.join(process.env.ANDAMENTO_FILTER_SCREENSHOT_DIR, `obbligazioni-${width}.png`) });
             }
+            await page.emulateMedia({ media: 'print' });
+            assert.equal(await page.locator('#andamentoTable .sticky-col').first().evaluate((element) => getComputedStyle(element).position), 'static', 'colonna data non bloccata in stampa');
             await page.close();
         }
         const fallback = await browser.newPage({ javaScriptEnabled: false });
@@ -73,7 +91,7 @@ const server = http.createServer((req, res) => {
         ]);
         assert((await fallback.locator('.andamento-extremes-table tbody').textContent()).includes('BTP test'));
         await fallback.close();
-        console.log('OK: filtro desktop/mobile, categorie vuote ed uso senza JavaScript.');
+        console.log('OK: larghezza adattiva, filtro desktop/mobile, data fissa e uso senza JavaScript.');
     } finally {
         await browser.close();
         await new Promise((resolve) => server.close(resolve));

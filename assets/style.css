@@ -30,7 +30,7 @@ body {
 }
 
 .container {
-    width: min(1240px, 94%);
+    width: calc(100% - clamp(24px, 2.5vw, 56px));
     margin: 0 auto;
 }
 
@@ -2803,6 +2803,7 @@ tbody tr.snapshot-row-min:hover {
 
 .andamento-table {
     min-width: max-content;
+    overflow: visible;
 }
 
 .andamento-table th,
@@ -2812,7 +2813,7 @@ tbody tr.snapshot-row-min:hover {
     padding: 0.4rem 0.28rem;
 }
 
-.sticky-col {
+.andamento-table .sticky-col {
     position: sticky;
     left: 0;
     z-index: 2;
@@ -3493,7 +3494,7 @@ tbody tr.snapshot-row-min:hover {
         min-width: 0;
     }
 
-    .sticky-col {
+    .andamento-table .sticky-col {
         position: static;
         box-shadow: none;
     }

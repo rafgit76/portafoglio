@@ -2,6 +2,15 @@
 
 return [
     [
+        'version' => '2.10.7',
+        'date' => '2026-11-27',
+        'title' => 'Dashboard a larghezza adattiva',
+        'changes' => [
+            'Le pagine sfruttano meglio la larghezza disponibile, mantenendo margini e adattamento agli schermi piccoli.',
+            'Nessuna modifica ai dati o migrazione.',
+        ],
+    ],
+    [
         'version' => '2.10.6',
         'date' => '2026-11-23',
         'title' => 'Nomi delle obbligazioni in Andamento',

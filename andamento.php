@@ -207,11 +207,6 @@ if (($_GET['export'] ?? '') === 'xlsx') {
 
 include __DIR__ . '/partials/header.php';
 ?>
-<style>
-main.container {
-    width: min(1520px, 98%);
-}
-</style>
 <section class="panel">
     <div class="panel-head andamento-page-header">
         <div>
