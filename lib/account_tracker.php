@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/economic_patrimony.php';
 
 function account_tracker_schema_ready(?PDO $pdo = null): bool
 {
@@ -580,6 +581,69 @@ function account_tracker_patrimonial_adjustments(array $values): array
     ];
 }
 
+function account_tracker_economic_snapshot(array $snapshot): array
+{
+    $fields = ['fineco_total_assets', 'liquidity_total', 'credit_agreed_amount', 'credit_available_amount', 'credit_used_amount', 'accounting_balance', 'available_balance', 'reserved_liquidity', 'multicurrency_amount'];
+    $input = [];
+    foreach ($fields as $field) {
+        $input[$field] = account_tracker_snapshot_decimal($snapshot, $field);
+    }
+    $input['portfolio'] = account_tracker_snapshot_decimal($snapshot, 'fineco_portfolio_total') ?? ($snapshot['portfolio_market_value'] ?? null);
+    $payload = json_decode((string) ($snapshot['patrimonial_import_payload'] ?? ''), true);
+    $input['pending_operations'] = $payload['details']['totale operazioni in corso'] ?? null;
+    $result = economic_patrimony_calculate($input);
+    $result['portfolio_source'] = account_tracker_snapshot_decimal($snapshot, 'fineco_portfolio_total') !== null ? 'Totale Fineco' : ($result['portfolio'] !== null ? 'Posizioni della stessa data' : null);
+    $overrides = json_decode((string) ($snapshot['manual_overrides_json'] ?? ''), true);
+    $result['manual_fields'] = array_keys(array_intersect_key(is_array($overrides) ? $overrides : [], array_flip(array_merge($fields, ['fineco_portfolio_total']))));
+    return $result;
+}
+
+function account_tracker_economic_history(PDO $pdo): array
+{
+    $rows = $pdo->query(
+        'SELECT p.*, s.total_market_value AS portfolio_market_value,
+            (SELECT j.parsed_payload_json FROM pf_patrimonial_import_jobs j
+             WHERE j.patrimonial_snapshot_id = p.id ORDER BY j.id DESC LIMIT 1) AS patrimonial_import_payload
+         FROM pf_patrimonial_snapshots p
+         LEFT JOIN pf_snapshots s ON s.snapshot_date = p.snapshot_date
+         ORDER BY p.snapshot_date ASC, p.id ASC'
+    )->fetchAll();
+    foreach ($rows as &$row) {
+        $row['economic'] = account_tracker_economic_snapshot($row);
+        unset($row['patrimonial_import_payload']);
+    }
+    unset($row);
+    return $rows;
+}
+
+function account_tracker_lombard_collateral(PDO $pdo, ?int $snapshotId): array
+{
+    if ($snapshotId === null) {
+        return [];
+    }
+    $statement = $pdo->prepare(
+        "SELECT a.asset_type, p.quantity, p.market_value
+         FROM pf_snapshot_positions p JOIN pf_assets a ON a.id = p.asset_id JOIN pf_dossiers d ON d.id = p.dossier_id
+         WHERE p.snapshot_id = :id AND d.dossier_type = 'CREDIT_LOMBARD'"
+    );
+    $statement->execute([':id' => $snapshotId]);
+    $rows = $statement->fetchAll();
+    if ($rows === []) {
+        return [];
+    }
+    $bonds = array_filter($rows, static fn(array $row): bool => $row['asset_type'] === 'BTP');
+    return ['market' => array_sum(array_column($rows, 'market_value')), 'bond_nominal' => $bonds === [] ? null : array_sum(array_column($bonds, 'quantity'))];
+}
+
+function account_tracker_lombard_collateral_history(PDO $pdo): array
+{
+    return $pdo->query(
+        "SELECT s.snapshot_date, SUM(CASE WHEN d.dossier_type = 'CREDIT_LOMBARD' THEN p.market_value END) AS market
+         FROM pf_snapshots s LEFT JOIN pf_snapshot_positions p ON p.snapshot_id = s.id LEFT JOIN pf_dossiers d ON d.id = p.dossier_id
+         GROUP BY s.snapshot_date ORDER BY s.snapshot_date"
+    )->fetchAll();
+}
+
 function account_tracker_credit_values_from_snapshot(array $snapshot, PDO $pdo): array
 {
     $hasImportedCredit = $snapshot['credit_agreed_amount'] !== null
@@ -930,11 +994,12 @@ function account_tracker_apply_documented_transfer(PDO $pdo, array $input): arra
     ];
 }
 
-function account_tracker_patrimonial_metrics(PDO $pdo): array
+function account_tracker_patrimonial_metrics(PDO $pdo, ?array $history = null): array
 {
-    $patrimonial = account_tracker_latest_patrimonial_snapshot($pdo);
+    $history ??= account_tracker_economic_history($pdo);
+    $patrimonial = $history === [] ? null : $history[array_key_last($history)];
     if ($patrimonial === null) {
-        return ['snapshot' => null, 'portfolio' => null, 'credit' => account_tracker_credit_summary($pdo), 'reconstructed_gross' => null, 'net_adjusted' => null, 'difference_amount' => null, 'difference_pct' => null];
+        return ['snapshot' => null, 'portfolio' => null, 'credit' => account_tracker_credit_summary($pdo), 'economic' => economic_patrimony_calculate([]), 'reconstructed_gross' => null, 'net_adjusted' => null, 'difference_amount' => null, 'difference_pct' => null];
     }
 
     $portfolioStatement = $pdo->prepare(
@@ -948,7 +1013,7 @@ function account_tracker_patrimonial_metrics(PDO $pdo): array
     $adjustments = account_tracker_patrimonial_adjustments([
         'fineco_total_assets' => account_tracker_snapshot_decimal($patrimonial, 'fineco_total_assets'),
         'liquidity_total' => account_tracker_snapshot_decimal($patrimonial, 'liquidity_total'),
-        'credit_available_amount' => $credit['available_amount'],
+        'credit_available_amount' => account_tracker_snapshot_decimal($patrimonial, 'credit_available_amount'),
     ]);
     $ownLiquidity = $adjustments['own_liquidity_adjusted'];
     $wealth = account_tracker_reconstructed_wealth($reportedPortfolioValue, $ownLiquidity, null);
@@ -961,13 +1026,7 @@ function account_tracker_patrimonial_metrics(PDO $pdo): array
     $dossierValues = account_tracker_patrimonial_dossier_values($pdo, (int) $patrimonial['id']);
     $dossierTotal = $dossierValues === [] ? null : array_sum(array_map(static fn(array $row): float => (float) $row['amount'], $dossierValues));
     $portfolioDossierDifference = $reportedPortfolioValue !== null && $dossierTotal !== null ? $reportedPortfolioValue - $dossierTotal : null;
-    $reservedLiquidity = account_tracker_snapshot_decimal($patrimonial, 'reserved_liquidity');
-    $availableBalanceCheck = $patrimonial['accounting_balance'] !== null && $reservedLiquidity !== null && $credit['available_amount'] !== null
-        ? (float) $patrimonial['accounting_balance'] + $reservedLiquidity + (float) $credit['available_amount']
-        : null;
-    $availableBalanceCheckDifference = $availableBalanceCheck !== null && $patrimonial['available_balance'] !== null
-        ? (float) $patrimonial['available_balance'] - $availableBalanceCheck
-        : null;
+    $economic = $patrimonial['economic'];
 
     return [
         'snapshot' => $patrimonial,
@@ -975,6 +1034,7 @@ function account_tracker_patrimonial_metrics(PDO $pdo): array
         'position_portfolio_value' => $positionPortfolioValue,
         'reported_portfolio_value' => $reportedPortfolioValue,
         'credit' => $credit,
+        'economic' => $economic,
         'reconstructed_gross' => $gross,
         'net_adjusted' => $net,
         'own_liquidity_adjusted' => $ownLiquidity,
@@ -983,8 +1043,8 @@ function account_tracker_patrimonial_metrics(PDO $pdo): array
         'imported_dossiers' => $dossierValues,
         'imported_dossier_total' => $dossierTotal,
         'portfolio_dossier_difference' => $portfolioDossierDifference,
-        'available_balance_check' => $availableBalanceCheck,
-        'available_balance_check_difference' => $availableBalanceCheckDifference,
+        'available_balance_check' => $economic['expected_available_balance'],
+        'available_balance_check_difference' => $economic['available_balance_delta'],
     ];
 }
 

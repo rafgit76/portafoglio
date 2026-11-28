@@ -19,6 +19,7 @@ function account_history_test_rows(int $count = 49): array
             'accounting_balance' => round($own - 40, 2),
             'available_balance' => round($own - 55 + $credit, 2),
             'reserved_liquidity' => -15.0,
+            'multicurrency_amount' => 55.0,
             'credit_agreed_amount' => $credit,
             'credit_used_amount' => 0.0,
             'credit_available_amount' => $credit,

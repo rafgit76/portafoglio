@@ -4,8 +4,10 @@
 
 Questo file e il documento master ufficiale del thread dedicato alla web app `Portafoglio Snapshot WEB APP`.
 
-Versione corrente locale e online:
-- `2.8.2`
+Versione locale e online: `2.11.0` (Patrimonio Netto Economico v2.0), pubblicata via WinSCP il 28/11/2026 e verificata sui 19 file applicativi aggiornati. Nessuna migrazione o riscrittura degli snapshot.
+Versione precedente: `2.10.7` (`e282658`). Il collaudo ha incluso il ricalcolo su copia isolata, la dashboard online dopo lo sblocco e la verifica del report AI patrimoniale generale.
+
+Il PNE, le quadrature, la liquidita economica e la loro attendibilita derivano dagli snapshot senza ricalcoli persistenti. L'archivio e le esportazioni conservano i dati e le formule legacy. Il pannello Diversificazione 2027 espone carico e mercato senza stimare i versamenti. Per risultati, limiti e rollback vedere `docs/patrimonio-netto-economico-2.11.0.md`.
 
 Aggiornamento sicurezza v2.8.2 (03/11/2026):
 - PhpSpreadsheet aggiornata da 2.4.5 a 2.4.8, senza modifiche alle altre dipendenze;

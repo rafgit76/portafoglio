@@ -3,7 +3,19 @@ require_once __DIR__ . '/account_tracker.php';
 
 function account_history_prepare(array $history): array
 {
+    $previous = null;
     foreach ($history as &$row) {
+        $row['economic'] ??= account_tracker_economic_snapshot($row);
+        $pne = $row['economic']['pne'];
+        $row['pne_num'] = $pne;
+        $row['pne_delta_num'] = $previous !== null && $pne !== null ? round($pne - $previous, 2) : null;
+        $row['economic_liquidity_num'] = $row['economic']['net_liquidity'];
+        $row['economic_credit_used_num'] = $row['economic']['credit_used'];
+        $row['pne_candidate_num'] = $row['economic']['reliable'] ? null : $row['economic']['candidate'];
+        $row['pne_reconstructed_num'] = $row['economic']['pne_reconstructed'];
+        $row['pne_quadrature_num'] = $row['economic']['quadrature'];
+        $row['economic_pending_num'] = $row['economic']['pending_operations'];
+        $previous = $pne;
         $positionPortfolio = isset($row['portfolio_market_value']) ? (float) $row['portfolio_market_value'] : null;
         $portfolioValue = account_tracker_snapshot_decimal($row, 'fineco_portfolio_total') ?? $positionPortfolio;
         $adjustments = account_tracker_patrimonial_adjustments([
@@ -41,6 +53,23 @@ function account_history_export_fields(): array
     ];
 }
 
+function account_history_economic_fields(): array
+{
+    return [
+        'pne_num' => 'Patrimonio netto economico',
+        'pne_delta_num' => 'Variazione vs snapshot precedente',
+        'economic_liquidity_num' => 'Liquidita economica netta',
+        'economic_credit_used_num' => 'Fido utilizzato (anche derivato)',
+        'pne_candidate_num' => 'PNE ipotetico, non validato',
+        'pne_reconstructed_num' => 'Controllo PNE analitico',
+        'pne_quadrature_num' => 'Scarto PNE / portafoglio + liquidita',
+        'economic_pending_num' => 'Operazioni in corso',
+        'multicurrency_amount' => 'Multicurrency',
+        'credit_lombard_account' => 'Conto Credit Lombard',
+        'other_liquidity' => 'Altra liquidita registrata',
+    ];
+}
+
 function account_history_export_value(array $row, string $field): ?float
 {
     return str_ends_with($field, '_num')
@@ -72,7 +101,7 @@ function account_history_export_model(array $history): array
 {
     usort($history, static fn(array $a, array $b): int => [$a['snapshot_date'], $a['id'] ?? 0] <=> [$b['snapshot_date'], $b['id'] ?? 0]);
     $history = account_history_prepare($history);
-    $fields = account_history_export_fields();
+    $fields = account_history_export_fields() + account_history_economic_fields();
     $stats = [];
     foreach ($fields as $field => $label) {
         $stats[$field] = ['min' => null, 'max' => null, 'count' => 0];
@@ -104,6 +133,7 @@ function account_history_export_model(array $history): array
         'fields' => $fields,
         'stats' => $stats,
         'net_change' => $firstNet !== null && $lastNet !== null ? $lastNet - $firstNet : null,
+        'pne_change' => isset($history[0]['pne_num'], $latest['pne_num']) ? round($latest['pne_num'] - $history[0]['pne_num'], 2) : null,
         'period' => $history === [] ? 'Nessuno snapshot' : account_history_export_date($history[0]['snapshot_date']) . ' - ' . account_history_export_date($latest['snapshot_date']),
     ];
 }
@@ -111,6 +141,7 @@ function account_history_export_model(array $history): array
 function account_history_export_notes(): array
 {
     return [
+        'PNE = patrimonio Fineco meno il fido accordato incluso, se dimostrabile. Il valore ipotetico non entra in grafici, variazioni ed estremi PNE. I valori legacy non sono PNE.',
         'Tutti gli importi sono in EUR. Archivio completo, indipendente dalla paginazione. N/D o cella vuota: dato non disponibile, non zero.',
         'Netto rettificato = patrimonio Fineco - credito disponibile. Liquidita propria = liquidita Fineco - credito disponibile. Se il credito disponibile manca, le rettifiche non sono calcolate.',
         'Portafoglio di riferimento: totale dossier Fineco, oppure valore delle posizioni consolidate della stessa data se il totale Fineco manca. Ricostruito = portafoglio di riferimento + liquidita propria.',
@@ -189,8 +220,9 @@ function account_history_export_workbook(array $report): \PhpOffice\PhpSpreadshe
         $r++;
     }
     $groups = [
-        'Patrimonio' => array_slice($report['fields'], 0, 7, true),
-        'Saldi e credito' => array_slice($report['fields'], 7, null, true),
+        'Patrimonio' => array_slice(account_history_export_fields(), 0, 7, true),
+        'Saldi e credito' => array_slice(account_history_export_fields(), 7, null, true),
+        'PNE' => account_history_economic_fields() + array_intersect_key(account_history_export_fields(), array_flip(['fineco_total_assets', 'portfolio_market_value_num', 'liquidity_total', 'accounting_balance', 'available_balance', 'credit_agreed_amount', 'credit_available_amount', 'reserved_liquidity'])),
     ];
     foreach ($groups as $name => $fields) {
         $sheet = $book->createSheet()->setTitle($name);
@@ -198,7 +230,7 @@ function account_history_export_workbook(array $report): \PhpOffice\PhpSpreadshe
         $sheet->mergeCells('A1:F1');
         $text($sheet, 'A2', $report['period'] . ' | Importi EUR | Date piu recenti per prime');
         $sheet->mergeCells('A2:F2');
-        $headers = array_merge(['Data'], array_values($fields), ['Origine snapshot']);
+        $headers = array_merge(['Data'], array_values($fields), ['Origine snapshot'], $name === 'PNE' ? ['Stato PNE', 'Diagnostica'] : []);
         foreach ($headers as $i => $label) {
             $text($sheet, \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 1) . '4', $label);
         }
@@ -214,6 +246,11 @@ function account_history_export_workbook(array $report): \PhpOffice\PhpSpreadshe
                 }
             }
             $text($sheet, \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c) . $r, account_history_export_origin($row));
+            if ($name === 'PNE') {
+                $text($sheet, \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c + 1) . $r, $row['economic']['status']);
+                $issues = array_map(static fn(string $issue): string => $issue . (isset($row['economic']['checks'][$issue]) ? ': ' . account_history_export_money($row['economic']['checks'][$issue]) . ' EUR' : ''), $row['economic']['issues']);
+                $text($sheet, \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c + 2) . $r, implode(' | ', $issues));
+            }
             $r++;
         }
         $style($sheet, count($headers), max(5, $r - 1));

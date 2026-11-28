@@ -3,11 +3,14 @@ require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/lib/fx.php';
 require_once __DIR__ . '/lib/news.php';
 require_once __DIR__ . '/lib/account_tracker.php';
+require_once __DIR__ . '/lib/diversification_project.php';
 
 $pageTitle = 'Dashboard';
 $pdo = db();
 $accountTrackerReady = account_tracker_schema_ready($pdo);
-$accountMetrics = $accountTrackerReady ? account_tracker_patrimonial_metrics($pdo) : null;
+$economicHistory = $accountTrackerReady ? account_tracker_economic_history($pdo) : [];
+$accountMetrics = $accountTrackerReady ? account_tracker_patrimonial_metrics($pdo, $economicHistory) : null;
+$projectHistory = diversification_project_history($pdo);
 
 $period = $_GET['period'] ?? 'all';
 $allowedPeriods = ['1d', '1w', '1m', 'ytd', 'all'];
@@ -105,6 +108,7 @@ $chartCost = array_map(static fn($r) => round((float) $r['total_cost_basis'], 2)
 $chartPnl = array_map(static fn($r) => round((float) $r['total_unrealized_pnl'], 2), $historyForChart);
 
 include __DIR__ . '/partials/header.php';
+include __DIR__ . '/partials/economic_dashboard.php';
 ?>
 <section class="cards">
     <article class="card"><h3>Snapshot</h3><p class="big"><?= (int) $stats['snapshots'] ?></p></article>
@@ -158,20 +162,7 @@ include __DIR__ . '/partials/header.php';
     <?php endif; ?>
 </section>
 
-<?php if ($accountMetrics !== null && $accountMetrics['snapshot'] !== null): ?>
-<section class="panel account-dashboard-panel">
-    <div class="panel-head"><div><h2>Conto e patrimonio</h2><p class="tiny-note">Dati opzionali da export Patrimonio Fineco o inserimento manuale. Il credito non e patrimonio.</p></div><a class="btn-link" href="<?= e(app_base_path()) ?>/account.php">Apri conto</a></div>
-    <div class="cards">
-        <article class="card"><h3 title="Valore riportato da Fineco, puo includere credito disponibile.">Patrimonio Fineco</h3><p class="big"><?= $accountMetrics['snapshot']['fineco_total_assets'] !== null ? 'EUR ' . number_format((float) $accountMetrics['snapshot']['fineco_total_assets'], 2, ',', '.') : 'N/D' ?></p><p class="tiny-note">Puo includere credito</p></article>
-        <article class="card"><h3 title="Patrimonio Fineco depurato dal credito o fido ancora disponibile.">Patrimonio netto rettificato</h3><p class="big"><?= $accountMetrics['net_adjusted'] !== null ? 'EUR ' . number_format((float) $accountMetrics['net_adjusted'], 2, ',', '.') : 'N/D' ?></p><p class="tiny-note">Fineco - credito disponibile</p></article>
-        <article class="card"><h3>Portafoglio totale Fineco</h3><p class="big"><?= $accountMetrics['reported_portfolio_value'] !== null ? 'EUR ' . number_format((float) $accountMetrics['reported_portfolio_value'], 2, ',', '.') : 'N/D' ?></p></article>
-        <article class="card"><h3 title="Totale liquidita Fineco depurato dal credito ancora disponibile.">Liquidita propria rettificata</h3><p class="big"><?= $accountMetrics['own_liquidity_adjusted'] !== null ? 'EUR ' . number_format((float) $accountMetrics['own_liquidity_adjusted'], 2, ',', '.') : 'N/D' ?></p><p class="tiny-note">Liquidita Fineco - credito</p></article>
-        <article class="card"><h3>Saldo contabile</h3><p class="big <?= (float) ($accountMetrics['snapshot']['accounting_balance'] ?? 0) < 0 ? 'neg' : '' ?>"><?= $accountMetrics['snapshot']['accounting_balance'] !== null ? 'EUR ' . number_format((float) $accountMetrics['snapshot']['accounting_balance'], 2, ',', '.') : 'N/D' ?></p></article>
-        <article class="card"><h3>Saldo disponibile</h3><p class="big"><?= $accountMetrics['snapshot']['available_balance'] !== null ? 'EUR ' . number_format((float) $accountMetrics['snapshot']['available_balance'], 2, ',', '.') : 'N/D' ?></p><p class="tiny-note">Non e patrimonio</p></article>
-    </div>
-    <?php if ($accountMetrics['credit']['lines_count'] > 0): ?><div class="account-credit-summary">Linee di credito: accordato <?= $accountMetrics['credit']['agreed_amount'] !== null ? 'EUR ' . number_format((float) $accountMetrics['credit']['agreed_amount'], 2, ',', '.') : 'N/D' ?>, utilizzato <?= $accountMetrics['credit']['used_amount'] !== null ? 'EUR ' . number_format((float) $accountMetrics['credit']['used_amount'], 2, ',', '.') : 'N/D' ?>, disponibile <?= $accountMetrics['credit']['available_amount'] !== null ? 'EUR ' . number_format((float) $accountMetrics['credit']['available_amount'], 2, ',', '.') : 'N/D' ?>. Escluso dal patrimonio.</div><?php endif; ?>
-</section>
-<?php endif; ?>
+<?php include __DIR__ . '/partials/diversification_project.php'; ?>
 
 <?php if ($pnlExtremes['max'] !== null && $pnlExtremes['min'] !== null): ?>
 <section class="panel">
@@ -262,8 +253,9 @@ include __DIR__ . '/partials/header.php';
     </section>
 <?php endif; ?>
 
-<?php if (count($historyForChart) > 0): ?>
 <script src="<?= e(app_base_path()) ?>/assets/vendor/chart.umd.min.js"></script>
+<script src="<?= e(app_base_path()) ?>/assets/economic-patrimony.js?v=<?= e((string) filemtime(__DIR__ . '/assets/economic-patrimony.js')) ?>" defer></script>
+<?php if (count($historyForChart) > 0): ?>
 <script>
 const labels = <?= json_encode($chartLabels, JSON_UNESCAPED_UNICODE) ?>;
 const marketData = <?= json_encode($chartMarket) ?>;

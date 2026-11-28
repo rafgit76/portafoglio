@@ -179,7 +179,8 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $requestedDate)) {
 }
 $formValues = $duplicate && $latestPatrimonial ? $latestPatrimonial : [];
 $formValues['snapshot_date'] = $requestedDate;
-$metrics = account_tracker_patrimonial_metrics($pdo);
+$economicHistory = account_tracker_economic_history($pdo);
+$metrics = account_tracker_patrimonial_metrics($pdo, $economicHistory);
 $latestPortfolio = $pdo->query('SELECT id, snapshot_date, total_market_value, total_cost_basis, total_unrealized_pnl FROM pf_snapshots ORDER BY snapshot_date DESC, id DESC LIMIT 1')->fetch();
 $dossierTotals = $latestPortfolio ? account_tracker_snapshot_dossier_totals($pdo, (int) $latestPortfolio['id']) : [];
 $pendingTransfers = account_tracker_pending_transfers($pdo);
@@ -306,26 +307,37 @@ include __DIR__ . '/partials/header.php';
 <?php endif; ?>
 
 <?php if ($metrics['snapshot'] !== null): ?>
+<?php $economicDetail = $metrics['economic']; ?>
 <section class="panel">
     <div class="panel-head">
-        <h2>Patrimonio</h2>
+        <h2>Liquidita economica e patrimonio</h2>
         <span class="tiny-note">Snapshot <?= e($originLabel((string) ($metrics['snapshot']['data_origin'] ?? ''))) ?> <?= e((string) $metrics['snapshot']['snapshot_date']) ?></span>
     </div>
     <div class="cards">
         <article class="card"><h3 title="Valore riportato da Fineco, puo includere credito disponibile.">Patrimonio Fineco</h3><p class="big"><?= e($money($metrics['snapshot']['fineco_total_assets'] !== null ? (float) $metrics['snapshot']['fineco_total_assets'] : null)) ?></p><p class="tiny-note">Puo includere credito disponibile</p></article>
-        <article class="card"><h3 title="Patrimonio Fineco depurato dal credito o fido ancora disponibile.">Patrimonio netto rettificato</h3><p class="big"><?= e($money($metrics['net_adjusted'])) ?></p><p class="tiny-note">Fineco - credito disponibile</p></article>
+        <article class="card"><h3>Patrimonio netto economico</h3><p class="big"><?= e($money($economicDetail['pne'])) ?></p><p class="tiny-note"><?= e($economicDetail['status']) ?></p></article>
         <article class="card"><h3>Portafoglio totale Fineco</h3><p class="big"><?= e($money($metrics['reported_portfolio_value'])) ?></p><p class="tiny-note">Include i dossier riportati da Fineco</p></article>
-        <article class="card"><h3 title="Totale liquidita Fineco depurato dal credito ancora disponibile.">Liquidita propria rettificata</h3><p class="big"><?= e($money($metrics['own_liquidity_adjusted'])) ?></p><p class="tiny-note">Liquidita Fineco - credito disponibile</p></article>
+        <article class="card"><h3>Liquidita economica netta</h3><p class="big <?= ($economicDetail['net_liquidity'] ?? 0) < 0 ? 'neg' : '' ?>"><?= e($money($economicDetail['net_liquidity'])) ?></p><p class="tiny-note">Liquidita Fineco meno il fido accordato incluso</p></article>
     </div>
     <div class="cards account-secondary-cards">
-        <article class="card"><h3>Saldo contabile</h3><p class="big <?= (float) ($metrics['snapshot']['accounting_balance'] ?? 0) < 0 ? 'neg' : '' ?>"><?= e($money($metrics['snapshot']['accounting_balance'] !== null ? (float) $metrics['snapshot']['accounting_balance'] : null)) ?></p><?php if ((float) ($metrics['snapshot']['accounting_balance'] ?? 0) < 0): ?><p class="tiny-note">Utilizzo di credito o fido in corso</p><?php endif; ?></article>
-        <article class="card"><h3 title="Importo spendibile, comprensivo delle linee di credito.">Saldo disponibile</h3><p class="big"><?= e($money($metrics['snapshot']['available_balance'] !== null ? (float) $metrics['snapshot']['available_balance'] : null)) ?></p><p class="tiny-note">Puo includere linee di credito</p></article>
+        <?php foreach (['Saldo contabile' => 'accounting_balance', 'Multicurrency' => 'multicurrency_amount', 'Altra liquidita registrata' => 'other_liquidity', 'Conto Credit Lombard' => 'credit_lombard_account'] as $label => $field): $balance = account_tracker_snapshot_decimal($metrics['snapshot'], $field); ?>
+        <article class="card"><h3><?= e($label) ?></h3><p class="big<?= $balance < 0 ? ' neg' : '' ?>"><?= e($money($balance)) ?></p></article>
+        <?php endforeach; ?>
+    </div>
+    <details><summary>Attendibilita e quadrature del PNE</summary><?php include __DIR__ . '/partials/economic_diagnostics.php'; ?></details>
+</section>
+<section class="panel">
+    <div class="panel-head"><div><h2>Capacita operativa</h2><p class="tiny-note">Il saldo spendibile puo includere credito e non misura il patrimonio proprio.</p></div></div>
+    <div class="cards account-secondary-cards">
+        <article class="card"><h3>Liquidita totale Fineco</h3><p class="big"><?= e($money(account_tracker_snapshot_decimal($metrics['snapshot'], 'liquidity_total'))) ?></p></article>
+        <article class="card"><h3 title="Importo spendibile, comprensivo delle linee di credito.">Saldo disponibile</h3><p class="big"><?= e($money($metrics['snapshot']['available_balance'] !== null ? (float) $metrics['snapshot']['available_balance'] : null)) ?></p><p class="tiny-note">Fido disponibile nello snapshot: <?= e($money($economicDetail['credit_available'])) ?></p></article>
         <article class="card"><h3>Liquidita prenotata</h3><p class="big <?= (float) ($metrics['snapshot']['reserved_liquidity'] ?? 0) < 0 ? 'neg' : '' ?>"><?= e($money($metrics['snapshot']['reserved_liquidity'] !== null ? (float) $metrics['snapshot']['reserved_liquidity'] : null)) ?></p><p class="tiny-note">Voce Fineco separata</p></article>
+        <article class="card"><h3>Operazioni in corso</h3><p class="big"><?= e($money($economicDetail['pending_operations'])) ?></p></article>
         <article class="card"><h3>Delta disponibile-contabile</h3><p class="big"><?php $deltaBalance = $metrics['snapshot']['available_balance'] !== null && $metrics['snapshot']['accounting_balance'] !== null ? (float) $metrics['snapshot']['available_balance'] - (float) $metrics['snapshot']['accounting_balance'] : null; ?><?= e($money($deltaBalance)) ?></p><p class="tiny-note">Solo informativo</p></article>
     </div>
     <?php if ($metrics['difference_amount'] !== null): ?>
         <div class="account-reconciliation <?= $showReconciliationWarning ? 'account-reconciliation-warning' : '' ?>">
-            <strong>Controllo di coerenza</strong>
+            <strong>Controllo di coerenza (legacy, non PNE)</strong>
             <span>Netto rettificato <?= e($money($metrics['net_adjusted'])) ?></span>
             <span>Ricostruito <?= e($money($metrics['reconstructed_gross'])) ?></span>
             <span>Differenza <?= e($money($metrics['difference_amount'])) ?> (<?= number_format((float) $metrics['difference_pct'], 2, ',', '.') ?>%)</span>
@@ -335,7 +347,7 @@ include __DIR__ . '/partials/header.php';
     <?php if ($metrics['available_balance_check'] !== null): ?>
         <div class="account-reconciliation">
             <strong>Controllo saldo disponibile</strong>
-            <span>Contabile + prenotata + credito disponibile <?= e($money($metrics['available_balance_check'])) ?></span>
+            <span>Contabile + prenotata + fido accordato <?= e($money($metrics['available_balance_check'])) ?></span>
             <span>Saldo disponibile <?= e($money($metrics['snapshot']['available_balance'] !== null ? (float) $metrics['snapshot']['available_balance'] : null)) ?></span>
             <span>Delta <?= e($money($metrics['available_balance_check_difference'])) ?>. Solo controllo, nessun valore e stato dedotto.</span>
         </div>
@@ -350,11 +362,25 @@ include __DIR__ . '/partials/header.php';
         </div>
     <?php endif; ?>
 </section>
+<section class="panel">
+    <div class="panel-head"><h2>Andamento di saldi e credito</h2><a class="btn-link" href="<?= e(app_base_path()) ?>/account_history.php">Storico patrimonio</a></div>
+    <div class="split-chart-grid account-history-chart-grid">
+    <?php
+    foreach (['Saldo contabile' => ['accounting_balance', '#b6384c'], 'Saldo disponibile' => ['available_balance', '#246bad'], 'Liquidita economica netta' => ['net_liquidity', '#087a62'], 'Fido utilizzato' => ['credit_used', '#986e00']] as $label => [$field, $color]) {
+        $balanceSeries = ['label' => $label, 'borderColor' => $color, 'data' => array_map(static fn(array $row): ?float => $row['economic'][$field] ?? account_tracker_snapshot_decimal($row, $field), $economicHistory)];
+        $economicChart = ['id' => 'pne-account-' . $field, 'label' => 'Andamento: ' . $label, 'dates' => array_column($economicHistory, 'snapshot_date'), 'series' => [$balanceSeries]];
+        ?><article class="chart-card"><h3><?= e($label) ?></h3><?php include __DIR__ . '/partials/economic_chart.php'; ?></article><?php
+    }
+    ?>
+    </div>
+</section>
+<?php if (empty($lombardMonitor['rows'])): ?><script src="<?= e(app_base_path()) ?>/assets/vendor/chart.umd.min.js"></script><?php endif; ?>
+<script src="<?= e(app_base_path()) ?>/assets/economic-patrimony.js?v=<?= e((string) filemtime(__DIR__ . '/assets/economic-patrimony.js')) ?>" defer></script>
 <?php endif; ?>
 
 <?php if ($metrics['credit']['lines_count'] > 0): ?>
 <section class="panel">
-    <div class="panel-head"><div><h2>Linee di credito</h2><?php if (($metrics['credit']['data_origin'] ?? '') === 'IMPORT_FINECO'): ?><p class="tiny-note">Valori aggregati dall'export Patrimonio Fineco: il tipo di fido non e specificato nel file.</p><?php endif; ?></div><a class="btn-link" href="<?= e(app_base_path()) ?>/credit_lines.php">Gestisci fidi</a></div>
+    <div class="panel-head"><div><h2>Debito e linee di credito</h2><?php if (($metrics['credit']['data_origin'] ?? '') === 'IMPORT_FINECO'): ?><p class="tiny-note">Valori aggregati dall'export Patrimonio Fineco: il tipo di fido non e specificato nel file.</p><?php else: ?><p class="tiny-note">Valori operativi delle linee registrate; non usati per ricostruire il PNE storico.</p><?php endif; ?></div><a class="btn-link" href="<?= e(app_base_path()) ?>/credit_lines.php">Gestisci fidi</a></div>
     <div class="cards">
         <article class="card"><h3>Accordato</h3><p class="big"><?= e($money($metrics['credit']['agreed_amount'] !== null ? (float) $metrics['credit']['agreed_amount'] : null)) ?></p></article>
         <article class="card"><h3>Utilizzato</h3><p class="big <?= (float) ($metrics['credit']['used_amount'] ?? 0) > 0 ? 'neg' : '' ?>"><?= e($money($metrics['credit']['used_amount'] !== null ? (float) $metrics['credit']['used_amount'] : null)) ?></p></article>
@@ -382,7 +408,11 @@ include __DIR__ . '/partials/header.php';
 </section>
 <?php endif; ?>
 
-<?php include __DIR__ . '/partials/credit_lombard_monitor.php'; ?>
+<?php
+$lombardCollateral = account_tracker_lombard_collateral($pdo, $metrics['portfolio']['id'] ?? null);
+$lombardCollateralHistory = $economicHistory === [] ? [] : account_tracker_lombard_collateral_history($pdo);
+include __DIR__ . '/partials/credit_lombard_monitor.php';
+?>
 
 <?php if ($confirmedTransfers): ?>
 <section class="panel">

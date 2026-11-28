@@ -2559,6 +2559,32 @@ tbody tr.snapshot-row-min:hover {
     }
 }
 
+.pne-hero { background: linear-gradient(150deg, #f0f8f5, var(--surface, #fff) 60%); }
+.pne-hero .panel-head, .pne-hero .actions-inline { flex-wrap: wrap; }
+.pne-hero .actions-inline { max-width: 100%; }
+.pne-hero .actions-inline a { white-space: nowrap; }
+.pne-headline-value { margin: .18em 0; color: #085a49; font-size: clamp(1.75rem, 5vw, 3.45rem); font-weight: 750; font-variant-numeric: tabular-nums; }
+.pne-meta { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.pne-deltas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .55rem; margin: .8rem 0 .3rem; }
+.pne-deltas div { border-left: 2px solid #badbd3; padding: .3rem .65rem; }
+.pne-deltas dt { font-size: .84rem; }
+.pne-deltas dd { margin: .18rem 0 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pne-cards { margin: .85rem 0; }
+.pne-cards .big { font-size: clamp(1rem, 2vw, 1.45rem); white-space: normal; }
+.pne-credit-strip, .pne-chart-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; margin: .9rem 0; }
+.pne-credit-strip { padding: .7rem .85rem; background: #e7f3ef; border-radius: .45rem; }
+.pne-credit-strip strong, .pne-credit-strip span { margin-right: .65rem; }
+.pne-credit-strip progress { accent-color: #087a62; vertical-align: middle; width: 7rem; }
+.pne-period-active { box-shadow: inset 0 -2px #087a62; font-weight: 700; }
+.pne-diagnostics { font-size: .85rem; color: #284452; }
+.pne-diagnostics ul { padding-left: 1.25rem; }
+.pne-compact-table { font-variant-numeric: tabular-nums; font-size: .9rem; }
+.pne-compact-table th, .pne-compact-table td { padding: .45rem .55rem; }
+.pne-compact-table td:not(:last-child) { white-space: nowrap; }
+.pne-compact-table details summary { cursor: pointer; font-weight: 650; }
+.pne-compact-table details[open] { min-width: 12rem; }
+.pne-history-filter { flex-wrap: wrap; }
+
 .changelog-panel {
     overflow: visible;
 }

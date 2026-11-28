@@ -14,8 +14,8 @@ $printDates = static function (?array $extreme): string {
 };
 $printStats = $report['stats'];
 $chartSets = [
-    'wealth' => ['net_adjusted_num' => ['Netto rettificato', '#007653'], 'portfolio_market_value_num' => ['Portafoglio di riferimento', '#1769b0'], 'fineco_total_assets' => ['Patrimonio Fineco (puo includere credito)', '#986e00']],
-    'balances' => ['accounting_balance' => ['Saldo contabile', '#1769b0'], 'own_liquidity_adjusted_num' => ['Liquidita propria rettificata', '#007653'], 'available_balance' => ['Saldo disponibile (include credito)', '#986e00']],
+    'wealth' => ['pne_num' => ['Patrimonio netto economico', '#007653'], 'portfolio_market_value_num' => ['Portafoglio di riferimento', '#1769b0'], 'fineco_total_assets' => ['Patrimonio Fineco (puo includere credito)', '#986e00']],
+    'balances' => ['accounting_balance' => ['Saldo contabile', '#1769b0'], 'economic_liquidity_num' => ['Liquidita economica netta', '#007653'], 'available_balance' => ['Saldo disponibile (include credito)', '#986e00']],
     'credit' => ['credit_agreed_amount' => ['Accordato', '#1769b0'], 'credit_used_amount' => ['Utilizzato', '#bd3753'], 'credit_available_amount' => ['Disponibile', '#986e00']],
 ];
 $printCharts = [];
@@ -40,8 +40,9 @@ foreach ($chartSets as $id => $series) {
 }
 $hasBalances = isset($printCharts['balances']) || isset($printCharts['credit']);
 $tableGroups = [
-    ['title' => 'Archivio patrimonio', 'fields' => array_slice($report['fields'], 0, 6, true), 'note' => 'Portafoglio: totale Fineco o, se assente, posizioni consolidate della stessa data. Ricostruito = portafoglio + liquidita propria.'],
-    ['title' => 'Archivio saldi e credito', 'fields' => array_slice($report['fields'], 7, null, true), 'note' => 'Saldo disponibile e credito disponibile non rappresentano patrimonio proprio. I dati mancanti restano N/D.'],
+    ['title' => 'Archivio patrimonio netto economico', 'status' => true, 'fields' => array_intersect_key($report['fields'], array_flip(['portfolio_market_value_num', 'accounting_balance', 'pne_num', 'pne_delta_num', 'economic_liquidity_num', 'economic_credit_used_num'])), 'note' => 'Il PNE non verificato resta N/D; non entra nelle variazioni o negli estremi.'],
+    ['title' => 'Archivio patrimonio (Fineco e legacy)', 'fields' => array_slice(account_history_export_fields(), 0, 6, true), 'note' => 'Portafoglio: totale Fineco o posizioni consolidate della stessa data. Ricostruito legacy = portafoglio + liquidita propria legacy.'],
+    ['title' => 'Archivio saldi e credito', 'fields' => array_slice(account_history_export_fields(), 7, null, true), 'note' => 'Saldo disponibile e credito disponibile non rappresentano patrimonio proprio. I dati mancanti restano N/D.'],
 ];
 $tablePages = [];
 foreach ($tableGroups as $group) {
@@ -81,11 +82,11 @@ $printFooter = static function () use (&$pageNumber, $pageCount, $report): void 
         <p><?= e($report['period']) ?> <span class="separator">/</span> <?= count($printRows) ?> snapshot <span class="separator">/</span> Importi in EUR</p>
     </div>
     <section class="net-headline">
-        <div><h2>Patrimonio netto rettificato</h2><p class="net-value"><?= e($printMoney($printValue('net_adjusted_num'))) ?><small>EUR</small></p><p>Ultimo snapshot: <?= e(account_history_export_date($printLatest['snapshot_date'])) ?></p></div>
-        <div class="net-change"><h3>Variazione nel periodo</h3><strong><?= e($printMoney($report['net_change'])) ?></strong><p>Variazione di valore,<br>non rendimento.</p></div>
+        <div><h2>Patrimonio netto economico</h2><p class="net-value"><?= e($printMoney($printValue('pne_num'))) ?><?php if ($printValue('pne_num') !== null): ?><small>EUR</small><?php endif; ?></p><p>Ultimo snapshot: <?= e(account_history_export_date($printLatest['snapshot_date'])) ?> · <?= e($printLatest['economic']['status']) ?></p></div>
+        <div class="net-change"><h3>Variazione nel periodo</h3><strong><?= e($printMoney($report['pne_change'])) ?></strong><p>Variazione di valore,<br>non rendimento.</p></div>
     </section>
     <div class="extreme-grid">
-        <?php foreach (['max' => 'Massimo netto', 'min' => 'Minimo netto'] as $direction => $label): $extreme = $printStats['net_adjusted_num'][$direction]; ?>
+        <?php foreach (['max' => 'Massimo PNE', 'min' => 'Minimo PNE'] as $direction => $label): $extreme = $printStats['pne_num'][$direction]; ?>
         <article class="extreme <?= e($direction) ?>"><h3><?= e($label) ?></h3><strong><?= e($printMoney($extreme['value'] ?? null)) ?></strong><p><?= e($printDates($extreme)) ?></p></article>
         <?php endforeach; ?>
     </div>
@@ -93,11 +94,11 @@ $printFooter = static function () use (&$pageNumber, $pageCount, $report): void 
     <section class="chart-section"><h2>Evoluzione del patrimonio</h2><div class="chart-box wealth-chart"><canvas id="chart-wealth" aria-label="Grafico patrimonio" role="img"></canvas></div></section>
     <?php else: ?><p class="no-data">Nessun valore patrimoniale disponibile.</p><?php endif; ?>
     <div class="value-grid">
-        <?php foreach (['fineco_total_assets' => 'Patrimonio Fineco', 'portfolio_market_value_num' => 'Portafoglio di riferimento', 'own_liquidity_adjusted_num' => 'Liquidita propria rettificata'] as $field => $label): ?>
+        <?php foreach (['fineco_total_assets' => 'Patrimonio Fineco', 'portfolio_market_value_num' => 'Portafoglio di riferimento', 'economic_liquidity_num' => 'Liquidita economica netta'] as $field => $label): ?>
         <div><h3><?= e($label) ?></h3><strong><?= e($printMoney($printValue($field))) ?></strong></div>
         <?php endforeach; ?>
     </div>
-    <aside class="method"><strong>Patrimonio, non capacita di spesa</strong><p>Netto rettificato = patrimonio Fineco - credito disponibile. Liquidita propria = liquidita Fineco - credito disponibile. Se il credito disponibile manca, le rettifiche restano N/D.</p><p>Massimi e minimi si riferiscono alle rilevazioni disponibili nel periodo, al centesimo. I pari merito sono evidenziati nell'archivio; N/D non significa zero.</p></aside>
+    <aside class="method"><strong>Patrimonio, non capacita di spesa</strong><p>PNE = patrimonio Fineco meno il fido accordato incluso. Il netto rettificato legacy sottrae il credito disponibile: non e il PNE.</p><p>Gli estremi PNE escludono valori non validati. N/D non significa zero.</p></aside>
     <?php $printFooter(); ?>
 </section>
 <?php if ($hasBalances): ?>
@@ -130,7 +131,7 @@ $printFooter = static function () use (&$pageNumber, $pageCount, $report): void 
     <div class="report-title"><h1><?= e($tablePage['title']) ?></h1><p><?= e($report['period']) ?> <span class="separator">/</span> Importi in EUR <span class="separator">/</span> Date piu recenti per prime</p></div>
     <p class="table-legend"><span class="max-key">Massimo</span><span class="min-key">Minimo</span><span class="both-key">Min = max</span><span>Estremi per colonna sull'intero archivio</span></p>
     <table class="history-print-table">
-        <thead><tr><th scope="col">Data / Origine</th><?php foreach ($tablePage['fields'] as $label): ?><th scope="col"><?= e($label) ?></th><?php endforeach; ?></tr></thead>
+        <thead><tr><th scope="col">Data / Origine</th><?php foreach ($tablePage['fields'] as $label): ?><th scope="col"><?= e($label) ?></th><?php endforeach; ?><?php if (!empty($tablePage['status'])): ?><th scope="col">Stato PNE</th><?php endif; ?></tr></thead>
         <tbody>
         <?php foreach ($tablePage['rows'] as $row): ?>
         <tr><th scope="row"><?= e(account_history_export_date($row['snapshot_date'])) ?><small><?= e(account_history_export_origin($row)) ?></small></th>
@@ -140,6 +141,7 @@ $printFooter = static function () use (&$pageNumber, $pageCount, $report): void 
                 $isMin = $value !== null && round($value, 2) === $printStats[$field]['min']['value'];
                 $kind = $isMax && $isMin ? 'both' : ($isMax ? 'max' : ($isMin ? 'min' : ''));
             ?><td class="<?= e($kind) ?>"><?= e($printMoney($value)) ?></td><?php endforeach; ?>
+            <?php if (!empty($tablePage['status'])): ?><td><?= e($row['economic']['status']) ?></td><?php endif; ?>
         </tr>
         <?php endforeach; ?>
         </tbody>

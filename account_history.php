@@ -25,22 +25,19 @@ if (!in_array($pageSize, $pageSizeOptions, true)) {
     $pageSize = 25;
 }
 $requestedPage = max(1, (int) ($_GET['page'] ?? 1));
-$historyUrl = static function (int $page, int $perPage): string {
+$detail = ($_GET['view'] ?? '') === 'detail';
+$statusOptions = ['VERIFICATO', 'RICOSTRUITO', 'DA VERIFICARE', 'NON DISPONIBILE'];
+$statusFilter = in_array($_GET['status'] ?? '', $statusOptions, true) ? $_GET['status'] : '';
+$historyUrl = static function (int $page, int $perPage) use ($detail, $statusFilter): string {
     return app_base_path() . '/account_history.php?' . http_build_query([
         'page' => max(1, $page),
         'per_page' => $perPage,
+        'view' => $detail ? 'detail' : 'compact',
+        'status' => $statusFilter,
     ]);
 };
 
-$historyStatement = $pdo->query(
-    'SELECT p.*, s.total_market_value AS portfolio_market_value
-     FROM pf_patrimonial_snapshots p
-     LEFT JOIN pf_snapshots s ON s.snapshot_date = p.snapshot_date
-     ORDER BY p.snapshot_date ASC, p.id ASC'
-);
-$history = $historyStatement->fetchAll();
-
-$history = account_history_prepare($history);
+$history = account_history_prepare(account_tracker_economic_history($pdo));
 
 if ($history !== [] && in_array($_GET['export'] ?? '', ['xlsx', 'pdf'], true)) {
     $report = account_history_export_model($history);
@@ -72,19 +69,20 @@ if ($history !== [] && in_array($_GET['export'] ?? '', ['xlsx', 'pdf'], true)) {
     exit;
 }
 
-$totalSnapshots = count($history);
+$archiveRows = $statusFilter === '' ? $history : array_values(array_filter($history, static fn(array $row): bool => $row['economic']['status'] === $statusFilter));
+$totalSnapshots = count($archiveRows);
 $totalPages = max(1, (int) ceil($totalSnapshots / $pageSize));
 $currentPage = min($requestedPage, $totalPages);
 $offset = ($currentPage - 1) * $pageSize;
-$rows = array_slice(array_reverse($history), $offset, $pageSize);
+$rows = array_slice(array_reverse($archiveRows), $offset, $pageSize);
 $firstRow = $totalSnapshots === 0 ? 0 : $offset + 1;
 $lastRow = min($totalSnapshots, $offset + count($rows));
 
 $latest = $history === [] ? null : $history[array_key_last($history)];
 $maxFineco = account_tracker_history_extreme($history, 'fineco_total_assets', 'max');
 $minFineco = account_tracker_history_extreme($history, 'fineco_total_assets', 'min');
-$maxNetAdjusted = account_tracker_history_extreme($history, 'net_adjusted_num', 'max');
-$minNetAdjusted = account_tracker_history_extreme($history, 'net_adjusted_num', 'min');
+$maxNetAdjusted = account_tracker_history_extreme($history, 'pne_num', 'max');
+$minNetAdjusted = account_tracker_history_extreme($history, 'pne_num', 'min');
 $maxAvailable = account_tracker_history_extreme($history, 'available_balance', 'max');
 $minAccounting = account_tracker_history_extreme($history, 'accounting_balance', 'min');
 
@@ -97,8 +95,10 @@ $chartAccounting = array_map(static fn(array $row): ?float => $row['accounting_b
 $chartAvailable = array_map(static fn(array $row): ?float => $row['available_balance'] !== null ? round((float) $row['available_balance'], 2) : null, $history);
 $chartLiquidity = array_map(static fn(array $row): ?float => $row['liquidity_total'] !== null ? round((float) $row['liquidity_total'], 2) : null, $history);
 $chartOwnLiquidity = array_map(static fn(array $row): ?float => $row['own_liquidity_adjusted_num'] !== null ? round((float) $row['own_liquidity_adjusted_num'], 2) : null, $history);
-$hasPatrimonyChart = count(array_filter(array_merge($chartFineco, $chartNetAdjusted, $chartPortfolio, $chartReconstructed), static fn($value): bool => $value !== null)) > 0;
-$hasBalancesChart = count(array_filter(array_merge($chartAccounting, $chartAvailable, $chartLiquidity, $chartOwnLiquidity), static fn($value): bool => $value !== null)) > 0;
+$chartPne = array_column($history, 'pne_num');
+$chartNetCash = array_column($history, 'economic_liquidity_num');
+$hasPatrimonyChart = count(array_filter(array_merge($chartPne, $chartFineco, $chartNetAdjusted, $chartPortfolio, $chartReconstructed), static fn($value): bool => $value !== null)) > 0;
+$hasBalancesChart = count(array_filter(array_merge($chartNetCash, $chartAccounting, $chartAvailable, $chartLiquidity, $chartOwnLiquidity), static fn($value): bool => $value !== null)) > 0;
 
 $money = static function (?float $value): string {
     return $value === null ? 'Dato non disponibile' : 'EUR ' . number_format($value, 2, ',', '.');
@@ -121,7 +121,7 @@ include __DIR__ . '/partials/header.php';
         <div>
             <p class="eyebrow">ARCHIVIO PATRIMONIALE</p>
             <h2>Andamento patrimonio</h2>
-            <p>Storico separato di patrimonio, liquidita e saldi. Il credito disponibile resta separato dal patrimonio proprio.</p>
+            <p>Patrimonio netto economico, liquidita e saldi. Solo il PNE verificato o ricostruito entra nei confronti.</p>
         </div>
         <div class="actions-inline">
             <a class="btn btn-secondary" href="<?= e(app_base_path()) ?>/account.php">Torna al conto</a>
@@ -147,10 +147,10 @@ include __DIR__ . '/partials/header.php';
     </section>
 <?php else: ?>
     <section class="cards">
-        <article class="card"><h3>Snapshot patrimoniali</h3><p class="big"><?= $totalSnapshots ?></p></article>
+        <article class="card"><h3>Snapshot patrimoniali</h3><p class="big"><?= count($history) ?></p></article>
         <article class="card"><h3>Periodo</h3><p class="big account-period-value"><?= e((new DateTimeImmutable((string) $history[0]['snapshot_date']))->format('d/m/Y')) ?><br><span>al <?= e((new DateTimeImmutable((string) $latest['snapshot_date']))->format('d/m/Y')) ?></span></p></article>
         <article class="card"><h3>Ultimo patrimonio Fineco</h3><p class="big"><?= e($money($latest['fineco_total_assets'] !== null ? (float) $latest['fineco_total_assets'] : null)) ?></p><p class="tiny-note">Puo includere credito</p></article>
-        <article class="card"><h3>Ultimo netto rettificato</h3><p class="big"><?= e($money($latest['net_adjusted_num'])) ?></p><p class="tiny-note">Fineco - credito disponibile</p></article>
+        <article class="card"><h3>Ultimo PNE</h3><p class="big"><?= e($money($latest['pne_num'])) ?></p><p class="tiny-note"><?= e($latest['economic']['status']) ?></p></article>
         <article class="card"><h3>Ultimo saldo contabile</h3><p class="big <?= (float) ($latest['accounting_balance'] ?? 0) < 0 ? 'neg' : '' ?>"><?= e($money($latest['accounting_balance'] !== null ? (float) $latest['accounting_balance'] : null)) ?></p></article>
     </section>
 
@@ -163,8 +163,8 @@ include __DIR__ . '/partials/header.php';
         <div class="cards">
             <article class="card"><h3>Massimo patrimonio Fineco</h3><p class="big pos"><?= e($money($maxFineco['value'] ?? null)) ?></p><p class="tiny-note"><?= $maxFineco !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($maxFineco['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
             <article class="card"><h3>Minimo patrimonio Fineco</h3><p class="big <?= (($minFineco['value'] ?? 0) < 0) ? 'neg' : '' ?>"><?= e($money($minFineco['value'] ?? null)) ?></p><p class="tiny-note"><?= $minFineco !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($minFineco['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
-            <article class="card"><h3>Massimo netto rettificato</h3><p class="big pos"><?= e($money($maxNetAdjusted['value'] ?? null)) ?></p><p class="tiny-note"><?= $maxNetAdjusted !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($maxNetAdjusted['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
-            <article class="card"><h3>Minimo netto rettificato</h3><p class="big <?= (($minNetAdjusted['value'] ?? 0) < 0) ? 'neg' : '' ?>"><?= e($money($minNetAdjusted['value'] ?? null)) ?></p><p class="tiny-note"><?= $minNetAdjusted !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($minNetAdjusted['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
+            <article class="card"><h3>Massimo PNE</h3><p class="big pos"><?= e($money($maxNetAdjusted['value'] ?? null)) ?></p><p class="tiny-note"><?= $maxNetAdjusted !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($maxNetAdjusted['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
+            <article class="card"><h3>Minimo PNE</h3><p class="big <?= (($minNetAdjusted['value'] ?? 0) < 0) ? 'neg' : '' ?>"><?= e($money($minNetAdjusted['value'] ?? null)) ?></p><p class="tiny-note"><?= $minNetAdjusted !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($minNetAdjusted['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
             <article class="card"><h3>Massimo saldo disponibile</h3><p class="big pos"><?= e($money($maxAvailable['value'] ?? null)) ?></p><p class="tiny-note"><?= $maxAvailable !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($maxAvailable['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
             <article class="card"><h3>Minimo saldo contabile</h3><p class="big <?= (($minAccounting['value'] ?? 0) < 0) ? 'neg' : '' ?>"><?= e($money($minAccounting['value'] ?? null)) ?></p><p class="tiny-note"><?= $minAccounting !== null ? 'Raggiunto il ' . e((new DateTimeImmutable($minAccounting['date']))->format('d/m/Y')) : 'Dato non disponibile' ?></p></article>
         </div>
@@ -202,14 +202,19 @@ include __DIR__ . '/partials/header.php';
             </div>
         </div>
         <div class="snapshots-toolbar">
-            <form method="get" class="snapshot-page-size">
+            <form method="get" class="snapshot-page-size pne-history-filter">
                 <input type="hidden" name="page" value="1">
+                <label for="pne-history-view">Vista</label>
+                <select id="pne-history-view" name="view"><option value="compact">Compatta</option><option value="detail"<?= $detail ? ' selected' : '' ?>>Dettagliata</option></select>
+                <label for="pne-history-status">Stato</label>
+                <select id="pne-history-status" name="status"><option value="">Tutti</option><?php foreach ($statusOptions as $option): ?><option<?= $option === $statusFilter ? ' selected' : '' ?>><?= e($option) ?></option><?php endforeach; ?></select>
                 <label for="accountHistoryPageSize">Righe</label>
                 <select id="accountHistoryPageSize" name="per_page" onchange="this.form.submit()">
                     <?php foreach ($pageSizeOptions as $option): ?>
                         <option value="<?= $option ?>"<?= $pageSize === $option ? ' selected' : '' ?>><?= $option ?></option>
                     <?php endforeach; ?>
                 </select>
+                <button class="btn-secondary btn-sm" type="submit">Applica</button>
             </form>
             <?php if ($totalPages > 1): ?>
             <nav class="snapshots-pagination" aria-label="Paginazione storico patrimonio">
@@ -220,8 +225,22 @@ include __DIR__ . '/partials/header.php';
             <?php endif; ?>
         </div>
         <div class="table-wrap account-history-table-wrap">
-            <table class="account-history-table">
-                <thead><tr><th>Data</th><th>Patrimonio Fineco</th><th>Netto rettificato</th><th>Portafoglio Fineco</th><th>Liquidita Fineco</th><th>Liquidita propria</th><th>Ricostruito</th><th>Saldo contabile</th><th>Saldo disponibile</th><th>Fido disponibile</th><th>Fido utilizzato</th><th>Origine</th></tr></thead>
+            <table class="<?= $detail ? 'account-history-table' : 'pne-compact-table' ?>">
+                <?php if (!$detail): ?>
+                <thead><tr><?php foreach (['Data', 'PNE', 'Variazione', 'Portafoglio', 'Liquidita netta', 'Saldo contabile', 'Fido utilizzato', 'Stato'] as $label): ?><th scope="col"><?= e($label) ?></th><?php endforeach; ?></tr></thead>
+                <tbody>
+                <?php foreach ($rows as $row): ?>
+                    <tr>
+                        <th scope="row"><?= e(account_history_export_date($row['snapshot_date'])) ?></th>
+                        <?php foreach (['pne_num', 'pne_delta_num', 'portfolio_market_value_num', 'economic_liquidity_num', 'accounting_balance', 'economic_credit_used_num'] as $key): ?>
+                        <td><?= e(account_history_export_money(account_history_export_value($row, $key))) ?></td>
+                        <?php endforeach; ?>
+                        <td><details><summary><?= e($row['economic']['status']) ?></summary><?php $economicDetail = $row['economic']; include __DIR__ . '/partials/economic_diagnostics.php'; ?></details></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+                <?php else: ?>
+                <thead><tr><th>Data</th><th>Patrimonio Fineco</th><th>Netto rettificato (legacy)</th><th>Portafoglio Fineco</th><th>Liquidita Fineco</th><th>Liquidita propria (legacy)</th><th>Ricostruito (legacy)</th><th>Saldo contabile</th><th>Saldo disponibile</th><th>Fido disponibile</th><th>Fido utilizzato</th><th>Origine</th><th>Dettaglio PNE</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $row): ?>
                     <?php
@@ -245,10 +264,19 @@ include __DIR__ . '/partials/header.php';
                         <td><?= e($money($row['credit_available_amount'] !== null ? (float) $row['credit_available_amount'] : null)) ?></td>
                         <td><?= e($money($row['credit_used_amount'] !== null ? (float) $row['credit_used_amount'] : null)) ?></td>
                         <td><?= e($originLabel((string) ($row['data_origin'] ?? ''))) ?></td>
+                        <td><details><summary><?= e($row['economic']['status']) ?></summary>
+                            <dl class="pne-diagnostics">
+                            <?php foreach (account_history_economic_fields() + ['reserved_liquidity' => 'Prenotazioni', 'credit_agreed_amount' => 'Fido accordato'] as $field => $label): ?>
+                                <dt><?= e($label) ?></dt><dd><?= e($money(account_history_export_value($row, $field))) ?></dd>
+                            <?php endforeach; ?>
+                            </dl><?php $economicDetail = $row['economic']; include __DIR__ . '/partials/economic_diagnostics.php'; ?>
+                        </details></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
+                <?php endif; ?>
             </table>
+            <?php if ($rows === []): ?><p>Nessuno snapshot per lo stato selezionato.</p><?php endif; ?>
         </div>
         <?php if ($totalPages > 1): ?>
         <nav class="snapshots-pagination snapshots-pagination-bottom" aria-label="Paginazione storico patrimonio">
@@ -281,8 +309,9 @@ include __DIR__ . '/partials/header.php';
             });
         };
         makeChart('patrimonyChart', [
+            {label: 'Patrimonio netto economico', data: <?= json_encode($chartPne) ?>, borderColor: '#087a62', tension: .18, spanGaps: false},
             {label: 'Patrimonio Fineco', data: <?= json_encode($chartFineco) ?>, borderColor: '#129e96', backgroundColor: 'rgba(18, 158, 150, .12)', tension: .22, spanGaps: true},
-            {label: 'Patrimonio netto rettificato', data: <?= json_encode($chartNetAdjusted) ?>, borderColor: '#168349', backgroundColor: 'rgba(22, 131, 73, .10)', tension: .22, spanGaps: true},
+            {label: 'Netto rettificato (legacy)', data: <?= json_encode($chartNetAdjusted) ?>, borderColor: '#168349', hidden: true, tension: .22, spanGaps: true},
             {label: 'Portafoglio consolidato', data: <?= json_encode($chartPortfolio) ?>, borderColor: '#2f64c8', backgroundColor: 'rgba(47, 100, 200, .10)', tension: .22, spanGaps: true},
             {label: 'Patrimonio ricostruito', data: <?= json_encode($chartReconstructed) ?>, borderColor: '#65748b', backgroundColor: 'rgba(101, 116, 139, .1)', borderDash: [6, 4], tension: .22, spanGaps: true}
         ]);
@@ -290,7 +319,8 @@ include __DIR__ . '/partials/header.php';
             {label: 'Saldo contabile', data: <?= json_encode($chartAccounting) ?>, borderColor: '#cb3650', backgroundColor: 'rgba(203, 54, 80, .1)', tension: .22, spanGaps: true},
             {label: 'Saldo disponibile', data: <?= json_encode($chartAvailable) ?>, borderColor: '#3373cc', backgroundColor: 'rgba(51, 115, 204, .1)', tension: .22, spanGaps: true},
             {label: 'Liquidita Fineco', data: <?= json_encode($chartLiquidity) ?>, borderColor: '#65748b', backgroundColor: 'rgba(101, 116, 139, .1)', tension: .22, spanGaps: true},
-            {label: 'Liquidita propria rettificata', data: <?= json_encode($chartOwnLiquidity) ?>, borderColor: '#168349', backgroundColor: 'rgba(22, 131, 73, .1)', tension: .22, spanGaps: true}
+            {label: 'Liquidita economica netta', data: <?= json_encode($chartNetCash) ?>, borderColor: '#168349', tension: .22, spanGaps: false},
+            {label: 'Liquidita propria rettificata (legacy)', data: <?= json_encode($chartOwnLiquidity) ?>, borderColor: '#168349', hidden: true, tension: .22, spanGaps: true}
         ]);
     })();
     </script>

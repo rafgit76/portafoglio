@@ -50,8 +50,8 @@ const server = http.createServer((req, res) => {
             await page.goto(url);
             assert(await page.evaluate(() => window.accountHistoryPrintReady));
             assert(await page.locator('#print-report').isEnabled());
-            assert.equal(await page.locator('.report-page').count(), 8);
-            assert.equal(await page.locator('.history-print-table tbody tr').count(), 98);
+            assert.equal(await page.locator('.report-page').count(), 11);
+            assert.equal(await page.locator('.history-print-table tbody tr').count(), 147);
             assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `No horizontal overflow at ${width}`);
             const visibleOverflow = await page.locator('h1,h2,h3,strong,td,th,.net-value,button').evaluateAll(elements => elements.filter(el => el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).display !== 'inline').map(el => el.textContent));
             assert.deepEqual(visibleOverflow, [], `Text fits at ${width}`);
@@ -74,7 +74,7 @@ const server = http.createServer((req, res) => {
                 }));
                 assert.deepEqual(collisions, [], 'No content collides with footer in print');
                 await page.pdf({ path: path.join(output, 'andamento-patrimonio-demo.pdf'), preferCSSPageSize: true, printBackground: true, displayHeaderFooter: false });
-                for (let n = 0; n < 8; n++) await page.locator('.report-page').nth(n).screenshot({ path: path.join(output, `print-${n + 1}.png`) });
+                for (let n = 0; n < 11; n++) await page.locator('.report-page').nth(n).screenshot({ path: path.join(output, `print-${n + 1}.png`) });
             }
             let printCalls = 0;
             await page.emulateMedia({ media: 'screen' });
@@ -93,7 +93,7 @@ const server = http.createServer((req, res) => {
             await context.close();
         }
         const page = await browser.newPage();
-        for (const [mode, chartCount, pageCount] of [['single', 3, 4], ['partial', 1, 3], ['nullable', 0, 3]]) {
+        for (const [mode, chartCount, pageCount] of [['single', 3, 5], ['partial', 1, 4], ['nullable', 0, 4]]) {
             await page.goto(`${url}?mode=${mode}`);
             assert(await page.evaluate(() => window.accountHistoryPrintReady));
             assert.equal(await page.locator('canvas').count(), chartCount);
@@ -108,7 +108,7 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.evaluate(() => window.accountHistoryPrintReady), false);
         assert(await page.locator('#print-report').isDisabled(), 'No silent blank-chart print on asset error');
         assert.deepEqual(errors, []);
-        console.log(`OK: Excel fixture, PDF 8 pages, single/partial/missing data, charts, print, desktop/mobile. Artifacts: ${output}`);
+        console.log(`OK: Excel fixture, PDF 11 pages, single/partial/missing data, charts, print, desktop/mobile. Artifacts: ${output}`);
     } finally {
         if (browser) await browser.close();
         await new Promise(resolve => server.close(resolve));

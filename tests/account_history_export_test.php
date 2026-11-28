@@ -42,7 +42,8 @@ $ties = account_history_export_model([$base, array_merge($base, ['snapshot_date'
 $assert(count($ties['stats']['fineco_total_assets']['max']['dates']) === 2, 'pari merito al centesimo');
 
 $book = account_history_export_workbook($report);
-$assert($book->getSheetNames() === ['Riepilogo', 'Patrimonio', 'Saldi e credito'], 'tre fogli distinti');
+$assert($book->getSheetNames() === ['Riepilogo', 'Patrimonio', 'Saldi e credito', 'PNE'], 'tre fogli legacy invariati e foglio PNE');
+$assert($book->getSheetByName('PNE')->getCell('B5')->getValue() === $report['latest']['pne_num'], 'identico PNE nel nuovo foglio');
 $wealth = $book->getSheetByName('Patrimonio');
 $credit = $book->getSheetByName('Saldi e credito');
 $assert($wealth->getHighestDataRow() === 53 && $credit->getHighestDataRow() === 53, 'tutte le 49 righe');
@@ -78,8 +79,8 @@ $printBase = '';
 ob_start();
 include __DIR__ . '/../partials/account_history_print.php';
 $html = ob_get_clean();
-$assert(substr_count($html, '<section class="report-page') === 8, 'PDF otto pagine esplicite per 49 righe');
-$assert(substr_count($html, '01/01/2025<small>') === 2 && substr_count($html, '18/02/2025<small>') === 2, 'PDF contiene anche gli estremi del periodo nei due archivi');
+$assert(substr_count($html, '<section class="report-page') === 11, 'PDF undici pagine esplicite per 49 righe');
+$assert(substr_count($html, '01/01/2025<small>') === 3 && substr_count($html, '18/02/2025<small>') === 3, 'PDF contiene gli estremi del periodo nei tre archivi');
 $assert(str_contains($html, 'class="both"'), 'pari merito min=max nella tabella PDF');
 $assert(str_contains($html, 'Nessuno snapshot') === false && str_contains($html, 'chart-credit'), 'grafici ricchezza e credito distinti');
 $report = $attack;

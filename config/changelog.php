@@ -2,6 +2,17 @@
 
 return [
     [
+        'version' => '2.11.0',
+        'date' => '2026-11-28',
+        'title' => 'Patrimonio Netto Economico v2.0',
+        'changes' => [
+            'PNE e liquidita economica in evidenza, con quadrature e confronti sui soli dati attendibili.',
+            'Archivio compatto, foglio PNE in Excel, stampa e report AI patrimoniali aggiornati. Dati e indicatori legacy conservati.',
+            'Conto separato tra liquidita, operativita e credito; nuovo pannello Diversificazione 2027.',
+            'Calcoli in sola lettura. Nessuna migrazione SQL.',
+        ],
+    ],
+    [
         'version' => '2.10.7',
         'date' => '2026-11-27',
         'title' => 'Dashboard a larghezza adattiva',

@@ -13,6 +13,22 @@ $lastRate = $lombardRates !== [] ? $lombardRates[array_key_last($lombardRates)] 
 <section class="panel lombard-monitor" id="credit-lombard-monitor">
     <div class="panel-head"><div><p class="eyebrow">MONITORAGGIO INDICATIVO</p><h2>Credit Lombard</h2><p>Stima dal saldo contabile degli snapshot, separata dall'utilizzo ufficiale Fineco.</p></div></div>
     <p class="tiny-note">Il saldo contabile negativo non identifica necessariamente il solo Credit Lombard. Il calcolo usa i giorni osservati e il divisore 365 anche negli anni bisestili; date valuta, movimenti infragiornalieri e altre linee possono produrre differenze rispetto alla banca. La quota oltre plafond usa il tasso indicato solo come ipotesi da verificare contrattualmente.</p>
+    <?php if (!empty($lombardCollateral)): ?>
+        <details class="lombard-history"><summary>Dossier a garanzia nello snapshot <?= e($metrics['snapshot']['snapshot_date']) ?></summary>
+            <p>Valore di mercato <?= e($money((float) $lombardCollateral['market'])) ?> · Nominale dei soli BTP <?= e($money($lombardCollateral['bond_nominal'] !== null ? (float) $lombardCollateral['bond_nominal'] : null)) ?>.</p>
+            <p class="tiny-note">Ratei separati, valore di garanzia riconosciuto dalla banca e rapporto utilizzo/garanzia: N/D. Il valore del dossier resta nel portafoglio.</p>
+        </details>
+    <?php endif; ?>
+    <?php if (array_filter(array_column($lombardCollateralHistory ?? [], 'market'), static fn($value): bool => $value !== null) !== []): ?>
+        <h3>Valore di mercato del dossier a garanzia</h3>
+        <?php
+        $economicChart = ['id' => 'pne-lombard-collateral', 'label' => 'Andamento del valore di mercato nel dossier a garanzia', 'dates' => array_column($lombardCollateralHistory, 'snapshot_date'), 'series' => [
+            ['label' => 'Valore di mercato del dossier', 'borderColor' => '#246bad', 'data' => array_map(static fn(array $row): ?float => $row['market'] === null ? null : (float) $row['market'], $lombardCollateralHistory)],
+        ]];
+        include __DIR__ . '/economic_chart.php';
+        ?>
+        <p class="tiny-note">Valori osservati nelle posizioni importate; non sono i valori riconosciuti dalla banca. Le date senza posizioni rilevate non sono valorizzate a zero.</p>
+    <?php endif; ?>
     <?php if ($lombardError !== null): ?>
         <div class="flash flash-error"><?= e($lombardError) ?></div>
     <?php elseif ($lombardRows === []): ?>

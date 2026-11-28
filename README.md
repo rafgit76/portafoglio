@@ -2,7 +2,9 @@
 
 App PHP 8.4 ready per Aruba Linux, pensata per importare direttamente gli export Fineco (`.xls` e `.xlsx`) e visualizzare lo storico del portafoglio.
 
-Versione corrente: `2.10.7`.
+Versione corrente: `2.11.0` (Patrimonio Netto Economico v2.0, pubblicata il 28/11/2026).
+
+Il PNE usa soltanto lo snapshot storico della data: sottrae il fido accordato incluso nei totali Fineco, non quello ancora disponibile. I calcoli non validati restano fuori da delta, grafici ed estremi PNE. Il netto rettificato precedente resta nei dettagli e negli export. Nessuna migrazione per la 2.11.0. Vedi [metodo e collaudo](docs/patrimonio-netto-economico-2.11.0.md).
 
 ## Andamento e storico quantita
 
